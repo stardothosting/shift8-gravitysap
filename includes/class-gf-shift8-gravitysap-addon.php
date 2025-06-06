@@ -10,10 +10,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Make sure the framework is included
-if (class_exists('GFForms')) {
-    GFForms::include_addon_framework();
-}
+// Framework should already be included by the main plugin
 
 /**
  * Gravity Forms Shift8 SAP Add-On Class
@@ -43,7 +40,7 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Full path
      */
-    protected $_full_path = __FILE__;
+    protected $_full_path = SHIFT8_GRAVITYSAP_PLUGIN_FILE;
     
     /**
      * Title
@@ -78,7 +75,7 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Enable form settings
      */
-    protected $_enable_rg_autoupgrade = true;
+    protected $_enable_rg_autoupgrade = false;
 
     /**
      * Singleton instance
@@ -416,7 +413,7 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Log info message
      */
-    protected function log_info($message) {
+    public function log_info($message) {
         if ($this->is_logging_enabled()) {
             Shift8_GravitySAP_Logger::log_info($message);
         }
@@ -425,7 +422,7 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Log error message
      */
-    protected function log_error($message) {
+    public function log_error($message) {
         if ($this->is_logging_enabled()) {
             Shift8_GravitySAP_Logger::log_error($message);
         }
