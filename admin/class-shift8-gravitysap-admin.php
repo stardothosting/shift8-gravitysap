@@ -67,6 +67,50 @@ class Shift8_GravitySAP_Admin {
     }
 
     /**
+     * Register settings
+     */
+    public function register_settings() {
+        register_setting('shift8_gravitysap_settings', 'shift8_gravitysap_settings', array(
+            'sanitize_callback' => array($this, 'sanitize_settings')
+        ));
+    }
+
+    /**
+     * Sanitize settings
+     */
+    public function sanitize_settings($input) {
+        $sanitized = array();
+        
+        $sanitized['sap_endpoint'] = esc_url_raw($input['sap_endpoint']);
+        $sanitized['sap_company_db'] = sanitize_text_field($input['sap_company_db']);
+        $sanitized['sap_username'] = sanitize_text_field($input['sap_username']);
+        $sanitized['sap_password'] = sanitize_text_field($input['sap_password']);
+        $sanitized['enable_logging'] = isset($input['enable_logging']) ? '1' : '0';
+        
+        return $sanitized;
+    }
+
+    /**
+     * Debug logging function
+     */
+    private function debug_log($message, $data = null) {
+        // Check if debug logging is enabled
+        $settings = get_option('shift8_gravitysap_settings', array());
+        if (!isset($settings['enable_logging']) || $settings['enable_logging'] !== '1') {
+            return;
+        }
+
+        // Format the log message
+        $log_message = '[Shift8 GravitySAP] ' . $message;
+        if ($data !== null) {
+            $log_message .= ' - Data: ' . print_r($data, true);
+        }
+
+        // Log to WordPress debug log
+        error_log($log_message);
+    }
+
+    /**
      * Render settings page
      */
     public function render_settings_page() {
@@ -79,8 +123,7 @@ class Shift8_GravitySAP_Admin {
             'sap_endpoint' => '',
             'sap_company_db' => '',
             'sap_username' => '',
-            'sap_password' => '',
-            'enable_logging' => true
+            'sap_password' => ''
         ));
 
         // Include settings template
@@ -88,317 +131,7 @@ class Shift8_GravitySAP_Admin {
     }
 
     /**
-     * Check if Gravity Forms is active
-     */
-    private function is_gravity_forms_active() {
-        // Check if Gravity Forms plugin is active
-        if (!function_exists('is_plugin_active')) {
-            include_once(ABSPATH . 'wp-admin/includes/plugin.php');
-        }
-        
-        return is_plugin_active('gravityforms/gravityforms.php') || class_exists('GFForms');
-    }
-
-    /**
-     * Admin page for GravitySAP settings
-     */
-    public function admin_page() {
-        if (isset($_POST['submit']) && wp_verify_nonce($_POST['shift8_gravitysap_nonce'], 'shift8_gravitysap_settings')) {
-            $this->save_settings();
-        }
-
-        $settings = get_option('shift8_gravitysap_settings', array());
-        $settings = wp_parse_args($settings, array(
-            'sap_endpoint' => '',
-            'sap_company_db' => '',
-            'sap_username' => '',
-            'sap_password' => '',
-            'enable_logging' => true
-        ));
-        ?>
-        <div class="wrap">
-            <h1><?php esc_html_e('Shift8 Gravity Forms SAP Integration', 'shift8-gravitysap'); ?></h1>
-            
-            <?php if (!$this->is_gravity_forms_active()): ?>
-            <div class="notice notice-warning">
-                <p>
-                    <strong><?php esc_html_e('Gravity Forms Required', 'shift8-gravitysap'); ?></strong><br>
-                    <?php esc_html_e('This plugin requires Gravity Forms to be installed and activated for full functionality. You can configure SAP connection settings below, but form integration will not work until Gravity Forms is active.', 'shift8-gravitysap'); ?>
-                </p>
-            </div>
-            <?php endif; ?>
-            
-            <div class="shift8-gravitysap-admin">
-                <div class="shift8-gravitysap-main">
-                    <form method="post" action="">
-                        <?php wp_nonce_field('shift8_gravitysap_settings', 'shift8_gravitysap_nonce'); ?>
-                        
-                        <table class="form-table">
-                            <tr>
-                                <th scope="row">
-                                    <label for="sap_endpoint"><?php esc_html_e('SAP Service Layer Endpoint URL', 'shift8-gravitysap'); ?></label>
-                                </th>
-                                <td>
-                                    <input type="url" id="sap_endpoint" name="sap_endpoint" value="<?php echo esc_attr($settings['sap_endpoint']); ?>" class="regular-text" required />
-                                    <p class="description"><?php esc_html_e('e.g., https://sap.example.com:50000/b1s/v1/', 'shift8-gravitysap'); ?></p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">
-                                    <label for="sap_company_db"><?php esc_html_e('SAP Company Database', 'shift8-gravitysap'); ?></label>
-                                </th>
-                                <td>
-                                    <input type="text" id="sap_company_db" name="sap_company_db" value="<?php echo esc_attr($settings['sap_company_db']); ?>" class="regular-text" required />
-                                    <p class="description"><?php esc_html_e('Your SAP Company Database identifier', 'shift8-gravitysap'); ?></p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">
-                                    <label for="sap_username"><?php esc_html_e('SAP Username', 'shift8-gravitysap'); ?></label>
-                                </th>
-                                <td>
-                                    <input type="text" id="sap_username" name="sap_username" value="<?php echo esc_attr($settings['sap_username']); ?>" class="regular-text" required />
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">
-                                    <label for="sap_password"><?php esc_html_e('SAP Password', 'shift8-gravitysap'); ?></label>
-                                </th>
-                                <td>
-                                    <input type="password" id="sap_password" name="sap_password" value="<?php echo esc_attr($settings['sap_password']); ?>" class="regular-text" required />
-                                    <p class="description"><?php esc_html_e('Password is encrypted and stored securely', 'shift8-gravitysap'); ?></p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row"><?php esc_html_e('Logging', 'shift8-gravitysap'); ?></th>
-                                <td>
-                                    <fieldset>
-                                        <label for="enable_logging">
-                                            <input type="checkbox" id="enable_logging" name="enable_logging" value="1" <?php checked($settings['enable_logging']); ?> />
-                                            <?php esc_html_e('Enable error and activity logging', 'shift8-gravitysap'); ?>
-                                        </label>
-                                    </fieldset>
-                                </td>
-                            </tr>
-                        </table>
-                        
-                        <?php submit_button(); ?>
-                        
-                        <p>
-                            <button type="button" id="test-connection" class="button button-secondary">
-                                <?php esc_html_e('Test SAP Connection', 'shift8-gravitysap'); ?>
-                            </button>
-                            <span id="connection-result"></span>
-                        </p>
-                    </form>
-                </div>
-                
-                <div class="shift8-gravitysap-sidebar">
-                    <div class="postbox">
-                        <h3 class="hndle"><?php esc_html_e('Log Information', 'shift8-gravitysap'); ?></h3>
-                        <div class="inside">
-                            <?php
-                            $log_size = Shift8_GravitySAP_Logger::get_log_file_size();
-                            $log_writable = Shift8_GravitySAP_Logger::is_log_writable();
-                            ?>
-                            <p><strong><?php esc_html_e('Log File Size:', 'shift8-gravitysap'); ?></strong> <?php echo esc_html(Shift8_GravitySAP_Logger::format_file_size($log_size)); ?></p>
-                            <p><strong><?php esc_html_e('Log File Status:', 'shift8-gravitysap'); ?></strong> 
-                                <span class="<?php echo $log_writable ? 'shift8-status-good' : 'shift8-status-error'; ?>">
-                                    <?php echo $log_writable ? esc_html__('Writable', 'shift8-gravitysap') : esc_html__('Not Writable', 'shift8-gravitysap'); ?>
-                                </span>
-                            </p>
-                            
-                            <p>
-                                <button type="button" id="view-log" class="button">
-                                    <?php esc_html_e('View Recent Logs', 'shift8-gravitysap'); ?>
-                                </button>
-                                <button type="button" id="clear-log" class="button">
-                                    <?php esc_html_e('Clear Log', 'shift8-gravitysap'); ?>
-                                </button>
-                            </p>
-                            
-                            <div id="log-viewer" style="display: none;">
-                                <h4><?php esc_html_e('Recent Log Entries (Last 50)', 'shift8-gravitysap'); ?></h4>
-                                <textarea readonly style="width: 100%; height: 300px; font-family: monospace; font-size: 12px;"></textarea>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="postbox">
-                        <h3 class="hndle"><?php esc_html_e('Quick Start Guide', 'shift8-gravitysap'); ?></h3>
-                        <div class="inside">
-                            <ol>
-                                <li><?php esc_html_e('Configure your SAP connection settings above', 'shift8-gravitysap'); ?></li>
-                                <li><?php esc_html_e('Test the connection to ensure it works', 'shift8-gravitysap'); ?></li>
-                                <li><?php esc_html_e('Go to a Gravity Form and add a "SAP B1 Integration" feed', 'shift8-gravitysap'); ?></li>
-                                <li><?php esc_html_e('Map form fields to SAP Business Partner fields', 'shift8-gravitysap'); ?></li>
-                                <li><?php esc_html_e('Test form submission to create Business Partners in SAP', 'shift8-gravitysap'); ?></li>
-                            </ol>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <style>
-        .shift8-gravitysap-admin {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .shift8-gravitysap-sidebar .postbox {
-            margin-bottom: 20px;
-        }
-        
-        .shift8-status-good {
-            color: #46b450;
-            font-weight: bold;
-        }
-        
-        .shift8-status-error {
-            color: #dc3232;
-            font-weight: bold;
-        }
-        
-        #connection-result {
-            margin-left: 10px;
-            font-weight: bold;
-        }
-        
-        #connection-result.success {
-            color: #46b450;
-        }
-        
-        #connection-result.error {
-            color: #dc3232;
-        }
-        </style>
-        <?php
-    }
-
-    /**
-     * Register settings
-     */
-    public function register_settings() {
-        // Register the settings group
-        register_setting(
-            'shift8_gravitysap_settings',
-            'shift8_gravitysap_settings',
-            array(
-                'sanitize_callback' => array($this, 'sanitize_settings')
-            )
-        );
-    }
-
-    /**
-     * Sanitize settings
-     */
-    public function sanitize_settings($input) {
-        $sanitized = array();
-        
-        // Sanitize endpoint
-        $sanitized['sap_endpoint'] = esc_url_raw($input['sap_endpoint']);
-        
-        // Sanitize company DB
-        $sanitized['sap_company_db'] = sanitize_text_field($input['sap_company_db']);
-        
-        // Sanitize username
-        $sanitized['sap_username'] = sanitize_text_field($input['sap_username']);
-        
-        // Encrypt password for storage
-        if (!empty($input['sap_password'])) {
-            $sanitized['sap_password'] = $this->encrypt_password($input['sap_password']);
-        } else {
-            // Keep existing password if no new one provided
-            $current_settings = get_option('shift8_gravitysap_settings', array());
-            $sanitized['sap_password'] = $current_settings['sap_password'] ?? '';
-        }
-
-        // Sanitize debug setting
-        $sanitized['sap_debug'] = isset($input['sap_debug']) ? '1' : '0';
-        
-        return $sanitized;
-    }
-
-    /**
-     * Encrypt password for storage
-     */
-    private function encrypt_password($password) {
-        if (empty($password)) {
-            return '';
-        }
-        
-        // Get encryption key from WordPress
-        $key = wp_salt('auth');
-        
-        // Encrypt the password
-        $encrypted = openssl_encrypt(
-            $password,
-            'AES-256-CBC',
-            $key,
-            0,
-            substr($key, 0, 16)
-        );
-        
-        return $encrypted;
-    }
-
-    /**
-     * Decrypt password for use
-     */
-    private function decrypt_password($encrypted_password) {
-        if (empty($encrypted_password)) {
-            return '';
-        }
-        
-        // Get encryption key from WordPress
-        $key = wp_salt('auth');
-        
-        // Decrypt the password
-        $decrypted = openssl_decrypt(
-            $encrypted_password,
-            'AES-256-CBC',
-            $key,
-            0,
-            substr($key, 0, 16)
-        );
-        
-        return $decrypted;
-    }
-
-    /**
-     * Save settings
-     */
-    private function save_settings() {
-        if (!current_user_can('manage_options')) {
-            wp_die(esc_html__('Insufficient permissions', 'shift8-gravitysap'));
-        }
-
-        if (!isset($_POST['shift8_gravitysap_nonce']) || !wp_verify_nonce($_POST['shift8_gravitysap_nonce'], 'shift8_gravitysap_settings')) {
-            wp_die(esc_html__('Security check failed', 'shift8-gravitysap'));
-        }
-
-        $settings = array(
-            'sap_endpoint' => esc_url_raw($_POST['sap_endpoint'] ?? ''),
-            'sap_company_db' => sanitize_text_field($_POST['sap_company_db'] ?? ''),
-            'sap_username' => sanitize_text_field($_POST['sap_username'] ?? ''),
-            'sap_password' => $_POST['sap_password'] ?? '', // Store password as is
-            'sap_debug' => isset($_POST['sap_debug']) ? '1' : '0'
-        );
-
-        update_option('shift8_gravitysap_settings', $settings);
-        add_settings_error(
-            'shift8_gravitysap_settings',
-            'settings_updated',
-            esc_html__('Settings saved successfully', 'shift8-gravitysap'),
-            'updated'
-        );
-    }
-
-    /**
-     * Enqueue admin scripts and styles
+     * Enqueue admin scripts
      */
     public function enqueue_scripts($hook) {
         // Only load on Shift8 pages
@@ -447,119 +180,88 @@ class Shift8_GravitySAP_Admin {
     }
 
     /**
-     * Debug logging function
-     */
-    private function debug_log($message, $data = null) {
-        // Check if debug logging is enabled
-        $settings = get_option('shift8_gravitysap_settings', array());
-        if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
-            return;
-        }
-
-        // Format the log message
-        $log_message = '[Shift8 GravitySAP] ' . $message;
-        if ($data !== null) {
-            $log_message .= ' - Data: ' . print_r($data, true);
-        }
-
-        // Log to WordPress debug log
-        error_log($log_message);
-    }
-
-    /**
-     * AJAX handler for testing SAP connection
+     * Test SAP connection
      */
     public function ajax_test_connection() {
+        check_ajax_referer('shift8_gravitysap_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied');
+        }
+
         try {
-            // Verify nonce
-            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'shift8_gravitysap_nonce')) {
-                throw new Exception('Security check failed');
-            }
+            // Get endpoint from POST data and ensure it does not end with a slash
+            $endpoint = isset($_POST['endpoint']) ? trim($_POST['endpoint']) : '';
+            $login_url = rtrim($endpoint, '/') . '/Login';
+            $company_db = trim(sanitize_text_field($_POST['company_db']));
+            $username = trim(sanitize_text_field($_POST['username']));
+            $password = trim(sanitize_text_field($_POST['password']));
 
-            // Get settings
-            $settings = get_option('shift8_gravitysap_settings');
-            if (!$settings) {
-                throw new Exception('SAP settings not found');
-            }
-
-            // Log settings (excluding password)
-            $this->debug_log('Test Connection - Settings', array(
-                'endpoint' => $settings['sap_endpoint'],
-                'company_db' => $settings['sap_company_db'],
-                'username' => $settings['sap_username']
+            // Log request details (excluding password)
+            $this->debug_log('Test Connection - Request', array(
+                'endpoint' => $endpoint,
+                'login_url' => $login_url,
+                'company_db' => $company_db,
+                'username' => $username
             ));
 
-            // Ensure endpoint ends with /
-            $endpoint = rtrim($settings['sap_endpoint'], '/') . '/';
-            
-            // Decrypt password for API call
-            $password = $this->decrypt_password($settings['sap_password']);
-            
             // Prepare login data
             $login_data = array(
-                'CompanyDB' => $settings['sap_company_db'],
-                'UserName' => $settings['sap_username'],
-                'Password' => $password // Send plain text password to SAP
+                'CompanyDB' => $company_db,
+                'UserName' => $username,
+                'Password' => $password
             );
+            $this->debug_log('Test Connection - JSON Body', $login_data);
 
-            $this->debug_log('Test Connection - Request URL', $endpoint . 'Login');
-
-            // Make the request
-            $response = wp_remote_post($endpoint . 'Login', array(
+            // Make the request to login_url
+            $response = wp_remote_post($login_url, array(
                 'headers' => array(
-                    'Content-Type' => 'application/json'
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                    'User-Agent' => 'curl/7.68.0'
                 ),
                 'body' => json_encode($login_data),
                 'timeout' => 30,
                 'sslverify' => false
             ));
 
+            // Log the full raw response for debugging
+            $this->debug_log('Test Connection - Full Raw Response', $response);
+
             if (is_wp_error($response)) {
                 $this->debug_log('Test Connection - WP Error', $response->get_error_message());
-                throw new Exception('Connection failed: ' . $response->get_error_message());
+                throw new Exception($response->get_error_message());
             }
 
             $response_code = wp_remote_retrieve_response_code($response);
             $body = wp_remote_retrieve_body($response);
             $headers = wp_remote_retrieve_headers($response);
 
+            // Log response details
             $this->debug_log('Test Connection - Response', array(
                 'code' => $response_code,
                 'headers' => $headers,
                 'body' => $body
             ));
 
-            if ($response_code === 200) {
-                $data = json_decode($body, true);
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw new Exception('Invalid JSON response: ' . json_last_error_msg());
-                }
-                wp_send_json_success(array(
-                    'message' => 'Successfully connected to SAP Service Layer',
-                    'details' => array(
-                        'session_id' => $data['SessionId'] ?? null,
-                        'version' => $data['Version'] ?? null,
-                        'session_timeout' => $data['SessionTimeout'] ?? null
-                    )
-                ));
-            } else {
+            if ($response_code !== 200) {
                 $error_data = json_decode($body, true);
-                $error_message = isset($error_data['error']['message']['value']) 
+                $error = isset($error_data['error']['message']['value']) 
                     ? $error_data['error']['message']['value'] 
-                    : 'HTTP ' . $response_code . ' - ' . $body;
-                throw new Exception('Connection failed: ' . $error_message);
+                    : 'HTTP ' . $response_code;
+                throw new Exception($error);
             }
+
+            $this->debug_log('Test Connection - Success', array(
+                'session_id' => json_decode($body, true)['SessionId'] ?? null,
+                'version' => json_decode($body, true)['Version'] ?? null
+            ));
+
+            wp_send_json_success('Connection successful');
 
         } catch (Exception $e) {
             $this->debug_log('Test Connection - Exception', $e->getMessage());
-            wp_send_json_error(array(
-                'message' => $e->getMessage(),
-                'details' => array(
-                    'endpoint' => $settings['sap_endpoint'] ?? '',
-                    'company_db' => $settings['sap_company_db'] ?? '',
-                    'username' => $settings['sap_username'] ?? ''
-                )
-            ));
+            wp_send_json_error($e->getMessage());
         }
     }
 

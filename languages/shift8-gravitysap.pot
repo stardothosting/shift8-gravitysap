@@ -1,0 +1,177 @@
+# Copyright (C) 2025 Shift8 Web
+# This file is distributed under the same license as the Shift8 Gravity Forms SAP B1 Integration plugin.
+msgid ""
+msgstr ""
+"Project-Id-Version: Shift8 Gravity Forms SAP B1 Integration 1.0.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/shift8-gravitysap\n"
+"POT-Creation-Date: 2025-01-01T00:00:00+00:00\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"PO-Revision-Date: 2025-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+
+#: admin/class-shift8-gravitysap-admin.php:36
+msgid "Shift8 Settings"
+msgstr ""
+
+#: admin/class-shift8-gravitysap-admin.php:47
+msgid "Shift8 Gravity Forms SAP B1 Integration"
+msgstr ""
+
+#: admin/class-shift8-gravitysap-admin.php:49
+msgid "Gravity SAP"
+msgstr ""
+
+#: admin/partials/settings-page.php:15
+msgid "Shift8 Gravity Forms SAP B1 Integration"
+msgstr ""
+
+#: admin/partials/settings-page.php:20
+msgid "Gravity Forms Required"
+msgstr ""
+
+#: admin/partials/settings-page.php:21
+msgid "This plugin requires Gravity Forms to be installed and activated for full functionality. You can configure SAP connection settings below, but form integration will not work until Gravity Forms is active."
+msgstr ""
+
+#: admin/partials/settings-page.php:34
+msgid "SAP Service Layer Endpoint URL"
+msgstr ""
+
+#: admin/partials/settings-page.php:38
+msgid "e.g., https://sap.example.com:50000/b1s/v1/"
+msgstr ""
+
+#: admin/partials/settings-page.php:43
+msgid "SAP Company Database"
+msgstr ""
+
+#: admin/partials/settings-page.php:47
+msgid "Your SAP Company Database identifier"
+msgstr ""
+
+#: admin/partials/settings-page.php:52
+msgid "SAP Username"
+msgstr ""
+
+#: admin/partials/settings-page.php:57
+msgid "SAP Password"
+msgstr ""
+
+#: admin/partials/settings-page.php:59
+msgid "Password is stored securely"
+msgstr ""
+
+#: admin/partials/settings-page.php:65
+msgid "Test SAP Connection"
+msgstr ""
+
+#: admin/partials/settings-page.php:75
+msgid "Quick Start Guide"
+msgstr ""
+
+#: admin/partials/settings-page.php:78
+msgid "Configure your SAP connection settings above"
+msgstr ""
+
+#: admin/partials/settings-page.php:79
+msgid "Test the connection to ensure it works"
+msgstr ""
+
+#: admin/partials/settings-page.php:80
+msgid "Go to a Gravity Form and add a \"SAP B1 Integration\" feed"
+msgstr ""
+
+#: admin/partials/settings-page.php:81
+msgid "Map form fields to SAP Business Partner fields"
+msgstr ""
+
+#: admin/partials/settings-page.php:82
+msgid "Test form submission to create Business Partners in SAP"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:142
+msgid "SAP B1 Integration Settings"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:146
+msgid "SAP Service Layer Endpoint URL"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:150
+msgid "SAP Company Database"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:154
+msgid "SAP Username"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:158
+msgid "SAP Password"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:164
+msgid "SAP B1 Feed Settings"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:168
+msgid "Feed Name"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:171
+msgid "Enter a feed name to uniquely identify this setup."
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:175
+msgid "Business Partner Type"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:179
+msgid "Customer"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:183
+msgid "Vendor"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:187
+msgid "Lead"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:191
+msgid "Select the type of Business Partner to create in SAP."
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:195
+msgid "Field Mappings"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:198
+msgid "Map form fields to SAP Business Partner fields."
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:211
+msgid "Card Code"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:217
+msgid "Card Name"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:223
+msgid "Card Type"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:229
+msgid "Email"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:235
+msgid "Phone"
+msgstr ""
+
+#: includes/class-gf-shift8-gravitysap-addon.php:241
+msgid "Address"
+msgstr "" 

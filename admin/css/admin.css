@@ -1,41 +1,90 @@
 /* Shift8 Gravity SAP Admin Styles */
 
 .shift8-gravitysap-admin {
-    margin-top: 20px;
+    max-width: 1200px;
+    margin: 20px 0;
 }
 
 .shift8-gravitysap-main {
-    max-width: 800px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .shift8-gravitysap-sidebar .postbox {
-    margin-bottom: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.shift8-status-good {
-    color: #46b450;
-    font-weight: bold;
+.shift8-gravitysap-sidebar .postbox .hndle {
+    border-bottom: 1px solid #ccd0d4;
+    padding: 12px 15px;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
 }
 
-.shift8-status-error {
-    color: #dc3232;
-    font-weight: bold;
+.shift8-gravitysap-sidebar .postbox .inside {
+    padding: 15px;
+    margin: 0;
+}
+
+.shift8-gravitysap-sidebar .postbox .inside ol {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.shift8-gravitysap-sidebar .postbox .inside li {
+    margin-bottom: 10px;
+}
+
+.shift8-gravitysap-sidebar .postbox .inside li:last-child {
+    margin-bottom: 0;
+}
+
+/* Form styles */
+.form-table th {
+    width: 200px;
+    padding: 20px 10px 20px 0;
+}
+
+.form-table td {
+    padding: 15px 10px;
+}
+
+.form-table input[type="text"],
+.form-table input[type="url"],
+.form-table input[type="password"] {
+    width: 100%;
+    max-width: 400px;
+}
+
+.form-table .description {
+    margin-top: 5px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Test connection button */
+#test-connection {
+    margin-right: 10px;
 }
 
 #connection-result {
-    margin-left: 10px;
+    display: inline-block;
     padding: 5px 10px;
     border-radius: 3px;
 }
 
 #connection-result.success {
-    background-color: #dff0d8;
-    color: #3c763d;
+    background-color: #f0f8f0;
 }
 
 #connection-result.error {
-    background-color: #f2dede;
-    color: #a94442;
+    background-color: #fef7f7;
 }
 
 /* Log viewer styles */
@@ -51,29 +100,6 @@
     background: #f8f8f8;
     border: 1px solid #ddd;
     border-radius: 4px;
-}
-
-/* Form table styles */
-.form-table th {
-    width: 200px;
-}
-
-.form-table td {
-    padding: 15px 10px;
-}
-
-.form-table input[type="text"],
-.form-table input[type="url"],
-.form-table input[type="password"] {
-    width: 100%;
-    max-width: 400px;
-}
-
-/* Description text */
-.form-table .description {
-    margin-top: 5px;
-    color: #666;
-    font-style: italic;
 }
 
 /* Button styles */
@@ -105,12 +131,91 @@
     .shift8-gravitysap-admin {
         grid-template-columns: 1fr;
     }
-
+    
     .form-table th {
         width: auto;
+        padding: 10px 0;
     }
-
+    
     .form-table td {
         padding: 10px 0;
     }
+    
+    .form-table input[type="text"],
+    .form-table input[type="url"],
+    .form-table input[type="password"] {
+        max-width: 100%;
+    }
+}
+
+.refresh-fields {
+    margin: 10px 0;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.refresh-fields .button {
+    margin-right: 10px;
+}
+
+.refresh-fields .spinner {
+    float: none;
+    margin: 0 10px;
+    vertical-align: middle;
+}
+
+.refresh-fields .refresh-status {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 5px 10px;
+    border-radius: 3px;
+}
+
+.refresh-fields .refresh-status.error {
+    color: #d63638;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+.refresh-fields .refresh-status.success {
+    color: #00a32a;
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+}
+
+/* Field mapping styles */
+.field-map-row {
+    margin-bottom: 10px;
+    padding: 10px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+}
+
+.field-map-row label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.field-map-row select {
+    width: 100%;
+    max-width: 400px;
+}
+
+.field-map-row .required {
+    color: #d63638;
+    margin-left: 5px;
+}
+
+/* Entity type selector */
+.sap-entity-type {
+    margin-bottom: 20px;
+}
+
+.sap-entity-type select {
+    width: 100%;
+    max-width: 400px;
 } 

@@ -1,8 +1,11 @@
 <?php
 /**
- * Gravity Forms SAP Business One Add-On
+ * Shift8 GravitySAP Add-On
  *
- * @package Shift8\GravitySAP
+ * @package     Shift8GravitySAP
+ * @author      Shift8
+ * @copyright   2024 Shift8
+ * @license     GPL-2.0+
  */
 
 // Exit if accessed directly
@@ -10,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Framework should already be included by the main plugin
+GFForms::include_addon_framework();
 
 /**
  * Gravity Forms Shift8 SAP Add-On Class
@@ -18,7 +21,16 @@ if (!defined('ABSPATH')) {
 class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
 
     /**
-     * Version
+     * Contains an instance of this class, if available.
+     *
+     * @var GF_Shift8_GravitySAP_AddOn
+     */
+    private static $_instance = null;
+
+    /**
+     * Defines the version of the Add-On.
+     *
+     * @var string
      */
     protected $_version = '1.0.0';
     
@@ -50,12 +62,16 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Short title
      */
-    protected $_short_title = 'GravitySAP';
+    protected $_short_title = 'SAP';
 
     /**
      * Capabilities
      */
-    protected $_capabilities = array('gravityforms_shift8_gravitysap', 'gravityforms_shift8_gravitysap_uninstall');
+    protected $_capabilities = array(
+        'gravityforms_shift8_gravitysap',
+        'gravityforms_shift8_gravitysap_uninstall',
+        'gravityforms_shift8_gravitysap_form_settings'
+    );
 
     /**
      * Capabilities settings
@@ -75,32 +91,25 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Enable form settings
      */
-    protected $_enable_rg_autoupgrade = false;
+    protected $_enable_rg_autoupgrade = true;
+    protected $_has_form_settings = true;
+    protected $_supports_feed_order = false;
 
     /**
-     * Singleton instance
+     * URL
      */
-    private static $_instance = null;
+    protected $_url = 'https://www.shift8web.ca';
 
     /**
-     * Get instance
+     * Get instance of this class.
+     *
+     * @return GF_Shift8_GravitySAP_AddOn
      */
     public static function get_instance() {
-        if (self::$_instance == null) {
+        if (null === self::$_instance) {
             self::$_instance = new self();
         }
         return self::$_instance;
-    }
-
-    /**
-     * Include the field map feature
-     */
-    public function minimum_requirements() {
-        return array(
-            'gravityforms' => array(
-                'version' => $this->_min_gravityforms_version
-            )
-        );
     }
 
     /**
@@ -109,15 +118,46 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     public function init() {
         parent::init();
         
+        // Validate required properties
+        if (empty($this->_slug)) {
+            error_log('[Shift8 GravitySAP] Error: Addon slug is not set');
+            return;
+        }
+        
+        if (empty($this->_path)) {
+            error_log('[Shift8 GravitySAP] Error: Addon path is not set');
+            return;
+        }
+        
+        // Validate Gravity Forms version
+        if (!$this->is_gravityforms_supported()) {
+            error_log('[Shift8 GravitySAP] Error: Gravity Forms version not supported');
+            return;
+        }
+        
         // Include SAP service class
         require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
         
+        // Add form submission handler
         add_action('gform_after_submission', array($this, 'handle_form_submission'), 10, 2);
         
-        // Debug: Log that the add-on is initialized
-        if (function_exists('error_log')) {
-            error_log('Shift8 GravitySAP Add-On initialized successfully');
-        }
+        // Add AJAX handlers
+        add_action('wp_ajax_refresh_sap_fields', array($this, 'ajax_refresh_sap_fields'));
+        
+        // Add feed settings
+        add_filter('gform_addon_navigation', array($this, 'add_feed_settings_menu'));
+        
+        // Add feed list columns
+        add_filter('gform_addon_feed_settings_fields', array($this, 'feed_settings_fields'), 10, 2);
+        
+        // Add feed list actions
+        add_filter('gform_addon_feed_actions', array($this, 'feed_list_actions'), 10, 2);
+        
+        // Add feed processing
+        add_filter('gform_addon_feed_processing', array($this, 'process_feed'), 10, 3);
+        
+        // Log successful initialization
+        error_log('[Shift8 GravitySAP] Addon initialized successfully');
     }
 
     /**
@@ -132,120 +172,103 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     }
 
     /**
-     * Configures the settings which should be rendered on the add-on settings tab
-     */
-    public function plugin_settings_fields() {
-        return array(
-            array(
-                'title'  => esc_html__('SAP Business One Settings', 'shift8-gravitysap'),
-                'fields' => array(
-                    array(
-                        'name'              => 'sap_endpoint',
-                        'label'             => esc_html__('Service Layer Endpoint', 'shift8-gravitysap'),
-                        'type'              => 'text',
-                        'class'             => 'medium',
-                        'feedback_callback' => array($this, 'is_valid_setting'),
-                    ),
-                    array(
-                        'name'              => 'sap_company_db',
-                        'label'             => esc_html__('Company Database', 'shift8-gravitysap'),
-                        'type'              => 'text',
-                        'class'             => 'medium',
-                        'feedback_callback' => array($this, 'is_valid_setting'),
-                    ),
-                    array(
-                        'name'              => 'sap_username',
-                        'label'             => esc_html__('Username', 'shift8-gravitysap'),
-                        'type'              => 'text',
-                        'class'             => 'medium',
-                        'feedback_callback' => array($this, 'is_valid_setting'),
-                    ),
-                    array(
-                        'name'              => 'sap_password',
-                        'label'             => esc_html__('Password', 'shift8-gravitysap'),
-                        'type'              => 'password',
-                        'class'             => 'medium',
-                        'feedback_callback' => array($this, 'is_valid_setting'),
-                    ),
-                ),
-            ),
-        );
-    }
-
-    /**
      * Configures the settings which should be rendered on the Form Settings > SAP tab
      */
     public function form_settings_fields($form) {
         return array(
             array(
-                'title'  => esc_html__('SAP Business One Field Mapping', 'shift8-gravitysap'),
+                'title'  => esc_html__('SAP Integration', 'shift8-gravitysap'),
                 'fields' => array(
                     array(
+                        'name'    => 'feed_name',
+                        'label'   => esc_html__('Feed Name', 'shift8-gravitysap'),
+                        'type'    => 'text',
+                        'class'   => 'medium',
+                        'tooltip' => esc_html__('Enter a feed name to uniquely identify this setup.', 'shift8-gravitysap'),
+                    ),
+                    array(
                         'name'    => 'sap_entity_type',
-                        'label'   => esc_html__('SAP Entity Type', 'shift8-gravitysap'),
+                        'label'   => esc_html__('Business Partner Type', 'shift8-gravitysap'),
                         'type'    => 'select',
                         'choices' => array(
                             array(
-                                'label' => esc_html__('Business Partner', 'shift8-gravitysap'),
-                                'value' => 'BusinessPartner',
+                                'label' => esc_html__('Customer', 'shift8-gravitysap'),
+                                'value' => 'Customer'
                             ),
                             array(
-                                'label' => esc_html__('Sales Order', 'shift8-gravitysap'),
-                                'value' => 'Orders',
+                                'label' => esc_html__('Vendor', 'shift8-gravitysap'),
+                                'value' => 'Vendor'
                             ),
+                            array(
+                                'label' => esc_html__('Lead', 'shift8-gravitysap'),
+                                'value' => 'Lead'
+                            )
                         ),
+                        'tooltip' => esc_html__('Select the type of Business Partner to create in SAP.', 'shift8-gravitysap'),
                     ),
                     array(
-                        'name'  => 'field_mappings',
-                        'label' => esc_html__('Field Mappings', 'shift8-gravitysap'),
-                        'type'  => 'field_mappings',
-                    ),
-                ),
-            ),
+                        'name'    => 'mappedFields',
+                        'label'   => esc_html__('Field Mappings', 'shift8-gravitysap'),
+                        'type'    => 'field_map',
+                        'tooltip' => esc_html__('Map form fields to SAP Business Partner fields.', 'shift8-gravitysap'),
+                        'field_map' => array(
+                            array(
+                                'name'     => 'CardName',
+                                'label'    => esc_html__('Card Name', 'shift8-gravitysap'),
+                                'required' => true
+                            ),
+                            array(
+                                'name'     => 'EmailAddress',
+                                'label'    => esc_html__('Email', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'Phone1',
+                                'label'    => esc_html__('Phone', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.Street',
+                                'label'    => esc_html__('Street Address', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.City',
+                                'label'    => esc_html__('City', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.Country',
+                                'label'    => esc_html__('Country', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.State',
+                                'label'    => esc_html__('State/Province', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.ZipCode',
+                                'label'    => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+                                'required' => false
+                            )
+                        )
+                    )
+                )
+            )
         );
     }
 
-    public function settings_field_mappings($field, $echo = true) {
-        $form = GFAPI::get_form($this->get_current_form_id());
-        $mappings = $this->get_form_setting('field_mappings') ?: array();
-        
-        $html = '<div class="field-mappings">';
-        $html .= '<table class="widefat">';
-        $html .= '<thead><tr>';
-        $html .= '<th>' . esc_html__('Form Field', 'shift8-gravitysap') . '</th>';
-        $html .= '<th>' . esc_html__('SAP Field', 'shift8-gravitysap') . '</th>';
-        $html .= '</tr></thead>';
-        $html .= '<tbody>';
-        
-        foreach ($form['fields'] as $form_field) {
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html($form_field->label) . '</td>';
-            $html .= '<td>';
-            $html .= '<input type="text" name="field_mappings[' . esc_attr($form_field->id) . ']" ';
-            $html .= 'value="' . esc_attr($mappings[$form_field->id] ?? '') . '" class="medium" />';
-            $html .= '</td>';
-            $html .= '</tr>';
-        }
-        
-        $html .= '</tbody></table>';
-        $html .= '</div>';
-        
-        if ($echo) {
-            echo $html;
-        }
-        return $html;
-    }
-
-    public function handle_form_submission($entry, $form) {
-        // Get form settings
-        $settings = $this->get_form_settings($form);
-        if (!$settings) {
-            $this->log_debug('No form settings found for form #' . $form['id']);
-            return;
-        }
-
+    /**
+     * Process the feed.
+     *
+     * @param array $feed  The feed object to be processed.
+     * @param array $entry The entry object currently being processed.
+     * @param array $form  The form object currently being processed.
+     */
+    public function process_feed($feed, $entry, $form) {
         // Get field mappings
-        $mappings = $settings['field_mappings'] ?? array();
+        $mappings = $feed['meta']['mappedFields'] ?? array();
         if (empty($mappings)) {
             $this->log_debug('No field mappings found for form #' . $form['id']);
             return;
@@ -253,8 +276,8 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
 
         // Prepare data for SAP
         $sap_data = array();
-        foreach ($mappings as $form_field_id => $sap_field) {
-            if (!empty($sap_field)) {
+        foreach ($mappings as $sap_field => $form_field_id) {
+            if (!empty($form_field_id)) {
                 $sap_data[$sap_field] = rgar($entry, $form_field_id);
             }
         }
@@ -266,18 +289,17 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
             return;
         }
 
-        // Send data to SAP
         try {
-            $endpoint = rtrim($sap_settings['sap_endpoint'], '/') . '/';
-            $entity_type = $settings['sap_entity_type'];
-            
-            // First, get session
+            // Get session
             $session = $this->get_sap_session($sap_settings);
             if (!$session) {
                 throw new Exception('Failed to get SAP session');
             }
 
             // Create entity in SAP
+            $endpoint = rtrim($sap_settings['sap_endpoint'], '/') . '/';
+            $entity_type = $feed['meta']['sap_entity_type'];
+            
             $response = wp_remote_post($endpoint . $entity_type, array(
                 'headers' => array(
                     'Content-Type' => 'application/json',
@@ -304,15 +326,26 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
                 'sap_data' => $sap_data
             ));
 
+            // Add success note to entry
+            GFAPI::add_note($entry['id'], 0, 'Shift8 SAP Integration', 
+                sprintf('Successfully created %s in SAP Business One', $entity_type));
+
         } catch (Exception $e) {
             $this->log_debug('Error creating ' . $entity_type . ' in SAP', array(
                 'form_id' => $form['id'],
                 'entry_id' => $entry['id'],
                 'error' => $e->getMessage()
             ));
+
+            // Add error note to entry
+            GFAPI::add_note($entry['id'], 0, 'Shift8 SAP Integration', 
+                sprintf('Error creating %s in SAP Business One: %s', $entity_type, $e->getMessage()));
         }
     }
 
+    /**
+     * Get SAP session
+     */
     private function get_sap_session($settings) {
         try {
             $endpoint = rtrim($settings['sap_endpoint'], '/') . '/';
@@ -351,22 +384,215 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
             throw new Exception('Session cookie not found');
 
         } catch (Exception $e) {
-            $this->log_debug('Error getting SAP session', array(
-                'error' => $e->getMessage()
-            ));
+            $this->log_debug('Error getting SAP session', $e->getMessage());
             return false;
         }
     }
 
+    /**
+     * Log debug information
+     */
     private function log_debug($message, $data = null) {
-        if (class_exists('GFLogging')) {
-            GFLogging::include_logger();
-            GFLogging::log_message('shift8-gravitysap', $message, KLogger::DEBUG, $data);
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $log_message = '[Shift8 GravitySAP] ' . $message;
+            if ($data !== null) {
+                $log_message .= ' Data: ' . print_r($data, true);
+            }
+            error_log($log_message);
         }
     }
-}
 
-// Initialize add-on
-function gf_shift8_gravitysap() {
-    return GF_Shift8_GravitySAP_AddOn::get_instance();
+    /**
+     * Plugin settings fields.
+     *
+     * @return array
+     */
+    public function plugin_settings_fields() {
+        return array(
+            array(
+                'title'  => esc_html__('SAP B1 Integration Settings', 'shift8-gravitysap'),
+                'fields' => array(
+                    array(
+                        'name'              => 'sap_endpoint',
+                        'label'             => esc_html__('SAP Service Layer Endpoint URL', 'shift8-gravitysap'),
+                        'type'              => 'text',
+                        'class'             => 'medium',
+                        'feedback_callback' => array($this, 'is_valid_setting'),
+                    ),
+                    array(
+                        'name'              => 'sap_company_db',
+                        'label'             => esc_html__('SAP Company Database', 'shift8-gravitysap'),
+                        'type'              => 'text',
+                        'class'             => 'medium',
+                        'feedback_callback' => array($this, 'is_valid_setting'),
+                    ),
+                    array(
+                        'name'              => 'sap_username',
+                        'label'             => esc_html__('SAP Username', 'shift8-gravitysap'),
+                        'type'              => 'text',
+                        'class'             => 'medium',
+                        'feedback_callback' => array($this, 'is_valid_setting'),
+                    ),
+                    array(
+                        'name'              => 'sap_password',
+                        'label'             => esc_html__('SAP Password', 'shift8-gravitysap'),
+                        'type'              => 'password',
+                        'class'             => 'medium',
+                        'feedback_callback' => array($this, 'is_valid_setting'),
+                    ),
+                ),
+            ),
+        );
+    }
+
+    /**
+     * Feed settings fields.
+     *
+     * @return array
+     */
+    public function feed_settings_fields() {
+        $form = $this->get_current_form();
+        return array(
+            array(
+                'title'  => esc_html__('SAP B1 Feed Settings', 'shift8-gravitysap'),
+                'fields' => array(
+                    array(
+                        'name'    => 'feed_name',
+                        'label'   => esc_html__('Feed Name', 'shift8-gravitysap'),
+                        'type'    => 'text',
+                        'class'   => 'medium',
+                        'tooltip' => esc_html__('Enter a feed name to uniquely identify this setup.', 'shift8-gravitysap'),
+                    ),
+                    array(
+                        'name'    => 'sap_entity_type',
+                        'label'   => esc_html__('Business Partner Type', 'shift8-gravitysap'),
+                        'type'    => 'select',
+                        'choices' => array(
+                            array(
+                                'label' => esc_html__('Customer', 'shift8-gravitysap'),
+                                'value' => 'Customer'
+                            ),
+                            array(
+                                'label' => esc_html__('Vendor', 'shift8-gravitysap'),
+                                'value' => 'Vendor'
+                            ),
+                            array(
+                                'label' => esc_html__('Lead', 'shift8-gravitysap'),
+                                'value' => 'Lead'
+                            )
+                        ),
+                        'tooltip' => esc_html__('Select the type of Business Partner to create in SAP.', 'shift8-gravitysap'),
+                    ),
+                    array(
+                        'name'    => 'mappedFields',
+                        'label'   => esc_html__('Field Mappings', 'shift8-gravitysap'),
+                        'type'    => 'field_map',
+                        'tooltip' => esc_html__('Map form fields to SAP Business Partner fields.', 'shift8-gravitysap'),
+                        'field_map' => array(
+                            array(
+                                'name'     => 'CardName',
+                                'label'    => esc_html__('Card Name', 'shift8-gravitysap'),
+                                'required' => true
+                            ),
+                            array(
+                                'name'     => 'EmailAddress',
+                                'label'    => esc_html__('Email', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'Phone1',
+                                'label'    => esc_html__('Phone', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.Street',
+                                'label'    => esc_html__('Street Address', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.City',
+                                'label'    => esc_html__('City', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.Country',
+                                'label'    => esc_html__('Country', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.State',
+                                'label'    => esc_html__('State/Province', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.ZipCode',
+                                'label'    => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+                                'required' => false
+                            )
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    private function get_form_fields_as_choices($form, $types = array()) {
+        $choices = array();
+        if (!isset($form['fields']) || !is_array($form['fields'])) return $choices;
+        foreach ($form['fields'] as $field) {
+            if (!rgar($field, 'label')) continue;
+            if (!empty($types) && !in_array($field->type, $types)) continue;
+            $choices[] = array(
+                'label' => $field->label,
+                'value' => $field->id,
+            );
+        }
+        return $choices;
+    }
+
+    /**
+     * Add feed settings menu
+     */
+    public function add_feed_settings_menu($menus) {
+        $menus[] = array(
+            'name'       => $this->_slug,
+            'label'      => $this->get_short_title(),
+            'permission' => $this->_capabilities_form_settings,
+            'query'      => array('fid' => '{id}'),
+            'icon'       => $this->get_menu_icon()
+        );
+        return $menus;
+    }
+
+    /**
+     * Feed list actions
+     */
+    public function feed_list_actions($feed, $column) {
+        if ($column === 'feed_name') {
+            $edit_url = add_query_arg(array(
+                'page' => 'gf_edit_forms',
+                'view' => 'settings',
+                'subview' => $this->_slug,
+                'fid' => $feed['form_id'],
+                'id' => $feed['id']
+            ), admin_url('admin.php'));
+            
+            echo '<a href="' . esc_url($edit_url) . '">' . esc_html__('Edit', 'shift8-gravitysap') . '</a>';
+        }
+    }
+
+    /**
+     * Check if Gravity Forms version is supported
+     */
+    private function is_gravityforms_supported() {
+        if (class_exists('GFCommon')) {
+            return version_compare(GFCommon::$version, $this->_min_gravityforms_version, '>=');
+        }
+        return false;
+    }
+
+    public function __construct() {
+        error_log('[Shift8 GravitySAP] GF_Shift8_GravitySAP_AddOn constructor called');
+        parent::__construct();
+    }
 } 
