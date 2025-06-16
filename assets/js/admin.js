@@ -16,20 +16,46 @@ jQuery(document).ready(function($) {
             type: 'POST',
             data: {
                 action: 'shift8_gravitysap_test_connection',
+                nonce: shift8_gravitysap.nonce,
                 sap_endpoint: $('#sap_endpoint').val(),
                 sap_company_db: $('#sap_company_db').val(),
                 sap_username: $('#sap_username').val(),
                 sap_password: $('#sap_password').val()
             },
             success: function(response) {
+                console.log('Raw response:', response); // Debug log
                 if (response.success && response.data.success) {
                     $result.addClass('success').text('✓ ' + response.data.message);
                 } else {
-                    $result.addClass('error').text('✗ ' + (response.data.message || 'Connection failed'));
+                    var errorMessage = '✗ ' + (response.data.message || 'Connection failed');
+                    if (response.data.details) {
+                        errorMessage += '\n\nDetails:\n' +
+                            'Endpoint: ' + response.data.details.endpoint + '\n' +
+                            'Company DB: ' + response.data.details.company_db + '\n' +
+                            'Username: ' + response.data.details.username;
+                    }
+                    $result.addClass('error').text(errorMessage);
                 }
             },
-            error: function() {
-                $result.addClass('error').text('✗ Request failed');
+            error: function(xhr, status, error) {
+                console.log('XHR:', xhr); // Debug log
+                console.log('Status:', status); // Debug log
+                console.log('Error:', error); // Debug log
+                
+                var errorMessage = '✗ Request failed\n\n';
+                errorMessage += 'Status: ' + status + '\n';
+                errorMessage += 'Error: ' + error + '\n';
+                
+                if (xhr.responseText) {
+                    try {
+                        var response = JSON.parse(xhr.responseText);
+                        errorMessage += '\nResponse: ' + JSON.stringify(response, null, 2);
+                    } catch (e) {
+                        errorMessage += '\nResponse: ' + xhr.responseText;
+                    }
+                }
+                
+                $result.addClass('error').text(errorMessage);
             },
             complete: function() {
                 $button.prop('disabled', false).text('Test SAP Connection');

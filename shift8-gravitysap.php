@@ -37,7 +37,9 @@ if (!defined('ABSPATH')) {
 }
 
 // Immediate test to see if this file is being loaded
-error_log('SHIFT8 GRAVITYSAP: Plugin file is being loaded by WordPress');
+if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+    error_log('SHIFT8 GRAVITYSAP: Plugin file is being loaded by WordPress');
+}
 
 // Plugin constants
 define('SHIFT8_GRAVITYSAP_VERSION', '1.0.0');
@@ -92,7 +94,9 @@ class Shift8_GravitySAP {
      * Initialize plugin
      */
     public function init() {
-        error_log('Shift8 GravitySAP: Plugin init() called');
+        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+            error_log('Shift8 GravitySAP: Plugin init() called');
+        }
         
         // Load textdomain
         load_plugin_textdomain('shift8-gravitysap', false, dirname(plugin_basename(__FILE__)) . '/languages');
@@ -102,13 +106,12 @@ class Shift8_GravitySAP {
             $this->init_admin();
         }
         
-        // Add logging functionality
-        add_action('init', array($this, 'init_logging'));
-        
         // Debug Gravity Forms detection
         $gf_active = $this->is_gravity_forms_active();
-        error_log('Shift8 GravitySAP: Gravity Forms active check: ' . ($gf_active ? 'true' : 'false'));
-        error_log('Shift8 GravitySAP: GFForms class exists: ' . (class_exists('GFForms') ? 'true' : 'false'));
+        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+            error_log('Shift8 GravitySAP: Gravity Forms active check: ' . ($gf_active ? 'true' : 'false'));
+            error_log('Shift8 GravitySAP: GFForms class exists: ' . (class_exists('GFForms') ? 'true' : 'false'));
+        }
         
         // Load the Gravity Forms Add-On with fallback integration
         add_action('gform_loaded', array($this, 'load_addon'), 5);
@@ -213,13 +216,6 @@ class Shift8_GravitySAP {
     }
     
     /**
-     * Initialize logging
-     */
-    public function init_logging() {
-        require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-logger.php';
-    }
-    
-    /**
      * Show notice if Gravity Forms is not active
      */
     public function gravity_forms_missing_notice() {
@@ -232,20 +228,13 @@ class Shift8_GravitySAP {
      * Plugin activation
      */
     public function activate() {
-        // Create log file if it doesn't exist
-        $log_file = SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'shift8-gravitysap.log';
-        if (!file_exists($log_file)) {
-            file_put_contents($log_file, '');
-        }
-        
         // Set default options
         if (!get_option('shift8_gravitysap_settings')) {
             add_option('shift8_gravitysap_settings', array(
                 'sap_endpoint' => '',
                 'sap_company_db' => '',
                 'sap_username' => '',
-                'sap_password' => '',
-                'enable_logging' => true
+                'sap_password' => ''
             ));
         }
     }
@@ -369,16 +358,12 @@ class Shift8_GravitySAP {
             $result = $sap_service->create_business_partner($business_partner_data);
             
             if ($result) {
-                Shift8_GravitySAP_Logger::log_info(sprintf('Successfully created Business Partner in SAP for entry ID: %s', $entry['id']));
-                
                 // Add entry note
                 GFFormsModel::add_note($entry['id'], 0, 'Shift8 SAP Integration', 
                     sprintf('Business Partner successfully created in SAP B1. Card Code: %s', $result['CardCode']));
             }
             
         } catch (Exception $e) {
-            Shift8_GravitySAP_Logger::log_error(sprintf('Error processing SAP submission for entry ID %s: %s', $entry['id'], $e->getMessage()));
-            
             // Add error note to entry
             GFFormsModel::add_note($entry['id'], 0, 'Shift8 SAP Integration', 
                 sprintf('Error creating Business Partner in SAP B1: %s', $e->getMessage()));
@@ -432,8 +417,8 @@ class Shift8_GravitySAP {
 }
 
 // Initialize plugin
-error_log('Shift8 GravitySAP: Plugin file loaded, initializing...');
-if (defined('WP_DEBUG') && WP_DEBUG) {
+if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+    error_log('Shift8 GravitySAP: Plugin file loaded, initializing...');
     error_log('Shift8 GravitySAP: Starting plugin initialization');
 }
 Shift8_GravitySAP::get_instance(); 

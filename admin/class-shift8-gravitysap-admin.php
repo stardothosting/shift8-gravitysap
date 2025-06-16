@@ -19,178 +19,72 @@ class Shift8_GravitySAP_Admin {
      * Constructor
      */
     public function __construct() {
-        add_action('admin_menu', array($this, 'add_admin_menu'));
-        add_action('admin_init', array($this, 'init_settings'));
-        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
+        add_action('admin_menu', array($this, 'add_menu_page'));
+        add_action('admin_init', array($this, 'register_settings'));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_scripts'));
         add_action('wp_ajax_shift8_gravitysap_test_connection', array($this, 'ajax_test_connection'));
+        add_action('wp_ajax_shift8_gravitysap_get_logs', array($this, 'ajax_get_logs'));
         add_action('wp_ajax_shift8_gravitysap_clear_log', array($this, 'ajax_clear_log'));
     }
 
     /**
-     * Add admin menu under Shift8 top-level menu
+     * Add menu page
      */
-    public function add_admin_menu() {
-        // Check if the main Shift8 menu already exists
-        if (!function_exists('shift8_main_page')) {
-            // Create the main Shift8 menu if it doesn't exist
+    public function add_menu_page() {
+        // Create main Shift8 menu if it doesn't exist
+        if (empty($GLOBALS['admin_page_hooks']['shift8-settings'])) {
             add_menu_page(
-                esc_html__('Shift8', 'shift8-gravitysap'),
-                esc_html__('Shift8', 'shift8-gravitysap'),
-                'manage_options',
+                'Shift8 Settings',
+                'Shift8',
+                'administrator',
                 'shift8-settings',
-                array($this, 'main_page'),
-                'dashicons-admin-generic',
-                30
+                array($this, 'shift8_main_page'),
+                'dashicons-shift8'
             );
         }
 
-        // Add submenu for GravitySAP
+        // Add submenu page under Shift8 dashboard
         add_submenu_page(
-            'shift8-settings',
-            esc_html__('Gravity Forms SAP Integration', 'shift8-gravitysap'),
-            esc_html__('SAP Integration', 'shift8-gravitysap'),
+            'shift8-settings', // Parent menu
+            esc_html__('Shift8 Gravity Forms SAP B1 Integration', 'shift8-gravitysap'),
+            esc_html__('Gravity SAP', 'shift8-gravitysap'),
             'manage_options',
             'shift8-gravitysap',
-            array($this, 'admin_page')
+            array($this, 'render_settings_page')
         );
     }
 
     /**
-     * Main Shift8 page (only if it doesn't exist)
+     * Main Shift8 settings page
      */
-    public function main_page() {
-        // Get available Shift8 plugins
-        $shift8_plugins = $this->get_shift8_plugins();
+    public function shift8_main_page() {
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Shift8 Plugins', 'shift8-gravitysap'); ?></h1>
-            <div class="shift8-main-content">
-                <p><?php esc_html_e('Welcome to Shift8 plugins dashboard. Use the menu on the left to configure your installed Shift8 plugins.', 'shift8-gravitysap'); ?></p>
-                
-                <div class="shift8-plugin-cards">
-                    <?php foreach ($shift8_plugins as $plugin): ?>
-                    <div class="shift8-plugin-card">
-                        <h3><?php echo esc_html($plugin['name']); ?></h3>
-                        <p><?php echo esc_html($plugin['description']); ?></p>
-                        <?php if ($plugin['admin_url']): ?>
-                        <a href="<?php echo esc_url($plugin['admin_url']); ?>" class="button button-primary">
-                            <?php esc_html_e('Configure', 'shift8-gravitysap'); ?>
-                        </a>
-                        <?php endif; ?>
-                        <p class="plugin-status">
-                            <span class="<?php echo $plugin['active'] ? 'shift8-status-good' : 'shift8-status-inactive'; ?>">
-                                <?php echo $plugin['active'] ? esc_html__('Active', 'shift8-gravitysap') : esc_html__('Inactive', 'shift8-gravitysap'); ?>
-                            </span>
-                        </p>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                
-                <?php if (empty($shift8_plugins)): ?>
-                <div class="shift8-no-plugins">
-                    <p><?php esc_html_e('No Shift8 plugins are currently installed.', 'shift8-gravitysap'); ?></p>
-                </div>
-                <?php endif; ?>
-            </div>
+            <h1><?php esc_html_e('Shift8 Settings', 'shift8-gravitysap'); ?></h1>
+            <p><?php esc_html_e('Welcome to the Shift8 settings page. Use the menu on the left to configure your Shift8 plugins.', 'shift8-gravitysap'); ?></p>
         </div>
-        
-        <style>
-        .shift8-plugin-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .shift8-plugin-card {
-            border: 1px solid #ddd;
-            padding: 20px;
-            border-radius: 5px;
-            background: #fff;
-        }
-        
-        .shift8-plugin-card h3 {
-            margin-top: 0;
-        }
-        
-        .plugin-status {
-            margin-top: 10px;
-            font-size: 12px;
-        }
-        
-        .shift8-status-inactive {
-            color: #d63638;
-        }
-        
-        .shift8-no-plugins {
-            text-align: center;
-            margin-top: 40px;
-            padding: 40px;
-            background: #f9f9f9;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-        }
-        </style>
         <?php
     }
 
     /**
-     * Get list of Shift8 plugins
+     * Render settings page
      */
-    private function get_shift8_plugins() {
-        $plugins = array();
-        
-        // Known Shift8 plugins and their admin pages
-        $known_plugins = array(
-            'shift8-gravitysap/shift8-gravitysap.php' => array(
-                'name' => 'Gravity Forms SAP Integration',
-                'description' => 'Integrate Gravity Forms with SAP Business One to create Business Partner records automatically.',
-                'admin_page' => 'shift8-gravitysap'
-            ),
-            'shift8-google-business/shift8-google-business.php' => array(
-                'name' => 'Google Business Integration',
-                'description' => 'Sync your business info and hours from Google My Business to WordPress.',
-                'admin_page' => 'shift8-google-business'
-            ),
-            'shift8-remote/shift8-remote.php' => array(
-                'name' => 'Remote Management',
-                'description' => 'API framework for managing multiple WordPress sites from a central location.',
-                'admin_page' => 'shift8-remote'
-            ),
-            'shift8-full-navigation/shift8-full-navigation.php' => array(
-                'name' => 'Full Navigation',
-                'description' => 'Create a full width, sticky and responsive navigation menu.',
-                'admin_page' => 'shift8-full-nav'
-            ),
-            'shift8-push/shift8-push.php' => array(
-                'name' => 'Push Notifications',
-                'description' => 'Send push notifications to users.',
-                'admin_page' => 'shift8-push'
-            ),
-            'shift8-security/shift8-security.php' => array(
-                'name' => 'Security',
-                'description' => 'WordPress security enhancements.',
-                'admin_page' => 'shift8-security'
-            )
-        );
-        
-        foreach ($known_plugins as $plugin_file => $plugin_info) {
-            $is_active = is_plugin_active($plugin_file);
-            $admin_url = null;
-            
-            if ($is_active && $plugin_info['admin_page']) {
-                $admin_url = admin_url('admin.php?page=' . $plugin_info['admin_page']);
-            }
-            
-            $plugins[] = array(
-                'name' => $plugin_info['name'],
-                'description' => $plugin_info['description'],
-                'active' => $is_active,
-                'admin_url' => $admin_url
-            );
+    public function render_settings_page() {
+        if (!current_user_can('manage_options')) {
+            return;
         }
-        
-        return $plugins;
+
+        // Get current settings
+        $settings = get_option('shift8_gravitysap_settings', array(
+            'sap_endpoint' => '',
+            'sap_company_db' => '',
+            'sap_username' => '',
+            'sap_password' => '',
+            'enable_logging' => true
+        ));
+
+        // Include settings template
+        include SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'admin/partials/settings-page.php';
     }
 
     /**
@@ -385,27 +279,47 @@ class Shift8_GravitySAP_Admin {
     }
 
     /**
-     * Save settings
+     * Register settings
      */
-    private function save_settings() {
-        $settings = array(
-            'sap_endpoint' => sanitize_url($_POST['sap_endpoint']),
-            'sap_company_db' => sanitize_text_field($_POST['sap_company_db']),
-            'sap_username' => sanitize_text_field($_POST['sap_username']),
-            'sap_password' => $this->encrypt_password(sanitize_text_field($_POST['sap_password'])),
-            'enable_logging' => !empty($_POST['enable_logging'])
+    public function register_settings() {
+        // Register the settings group
+        register_setting(
+            'shift8_gravitysap_settings',
+            'shift8_gravitysap_settings',
+            array(
+                'sanitize_callback' => array($this, 'sanitize_settings')
+            )
         );
-
-        update_option('shift8_gravitysap_settings', $settings);
-        
-        echo '<div class="notice notice-success"><p>' . esc_html__('Settings saved successfully.', 'shift8-gravitysap') . '</p></div>';
     }
 
     /**
-     * Initialize settings
+     * Sanitize settings
      */
-    public function init_settings() {
-        register_setting('shift8_gravitysap_settings', 'shift8_gravitysap_settings');
+    public function sanitize_settings($input) {
+        $sanitized = array();
+        
+        // Sanitize endpoint
+        $sanitized['sap_endpoint'] = esc_url_raw($input['sap_endpoint']);
+        
+        // Sanitize company DB
+        $sanitized['sap_company_db'] = sanitize_text_field($input['sap_company_db']);
+        
+        // Sanitize username
+        $sanitized['sap_username'] = sanitize_text_field($input['sap_username']);
+        
+        // Encrypt password for storage
+        if (!empty($input['sap_password'])) {
+            $sanitized['sap_password'] = $this->encrypt_password($input['sap_password']);
+        } else {
+            // Keep existing password if no new one provided
+            $current_settings = get_option('shift8_gravitysap_settings', array());
+            $sanitized['sap_password'] = $current_settings['sap_password'] ?? '';
+        }
+
+        // Sanitize debug setting
+        $sanitized['sap_debug'] = isset($input['sap_debug']) ? '1' : '0';
+        
+        return $sanitized;
     }
 
     /**
@@ -416,62 +330,235 @@ class Shift8_GravitySAP_Admin {
             return '';
         }
         
-        // Simple base64 encoding for now - in production, use proper encryption
-        return base64_encode($password);
+        // Get encryption key from WordPress
+        $key = wp_salt('auth');
+        
+        // Encrypt the password
+        $encrypted = openssl_encrypt(
+            $password,
+            'AES-256-CBC',
+            $key,
+            0,
+            substr($key, 0, 16)
+        );
+        
+        return $encrypted;
     }
 
     /**
      * Decrypt password for use
      */
-    public static function decrypt_password($encrypted_password) {
+    private function decrypt_password($encrypted_password) {
         if (empty($encrypted_password)) {
             return '';
         }
         
-        return base64_decode($encrypted_password);
+        // Get encryption key from WordPress
+        $key = wp_salt('auth');
+        
+        // Decrypt the password
+        $decrypted = openssl_decrypt(
+            $encrypted_password,
+            'AES-256-CBC',
+            $key,
+            0,
+            substr($key, 0, 16)
+        );
+        
+        return $decrypted;
     }
 
     /**
-     * Enqueue admin scripts
+     * Save settings
      */
-    public function enqueue_admin_scripts($hook) {
-        if ($hook !== 'shift8_page_shift8-gravitysap') {
+    private function save_settings() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Insufficient permissions', 'shift8-gravitysap'));
+        }
+
+        if (!isset($_POST['shift8_gravitysap_nonce']) || !wp_verify_nonce($_POST['shift8_gravitysap_nonce'], 'shift8_gravitysap_settings')) {
+            wp_die(esc_html__('Security check failed', 'shift8-gravitysap'));
+        }
+
+        $settings = array(
+            'sap_endpoint' => esc_url_raw($_POST['sap_endpoint'] ?? ''),
+            'sap_company_db' => sanitize_text_field($_POST['sap_company_db'] ?? ''),
+            'sap_username' => sanitize_text_field($_POST['sap_username'] ?? ''),
+            'sap_password' => $_POST['sap_password'] ?? '', // Store password as is
+            'sap_debug' => isset($_POST['sap_debug']) ? '1' : '0'
+        );
+
+        update_option('shift8_gravitysap_settings', $settings);
+        add_settings_error(
+            'shift8_gravitysap_settings',
+            'settings_updated',
+            esc_html__('Settings saved successfully', 'shift8-gravitysap'),
+            'updated'
+        );
+    }
+
+    /**
+     * Enqueue admin scripts and styles
+     */
+    public function enqueue_scripts($hook) {
+        // Only load on Shift8 pages
+        if (strpos($hook, 'shift8') === false) {
             return;
         }
 
+        // Add Shift8 icon CSS
+        wp_add_inline_style('admin-menu', '
+            .dashicons-shift8:before {
+                content: "S8";
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+                font-weight: bold;
+                font-size: 16px;
+                line-height: 1;
+                text-align: center;
+                width: 20px;
+                height: 20px;
+                display: inline-block;
+                vertical-align: middle;
+            }
+        ');
+
+        // Add plugin-specific styles
+        wp_enqueue_style(
+            'shift8-gravitysap-admin',
+            SHIFT8_GRAVITYSAP_PLUGIN_URL . 'admin/css/admin.css',
+            array(),
+            SHIFT8_GRAVITYSAP_VERSION
+        );
+
+        // Add plugin-specific scripts
         wp_enqueue_script(
             'shift8-gravitysap-admin',
-            SHIFT8_GRAVITYSAP_PLUGIN_URL . 'assets/js/admin.js',
+            SHIFT8_GRAVITYSAP_PLUGIN_URL . 'admin/js/admin.js',
             array('jquery'),
             SHIFT8_GRAVITYSAP_VERSION,
             true
         );
+
+        // Localize script
+        wp_localize_script('shift8-gravitysap-admin', 'shift8GravitySAP', array(
+            'ajaxurl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('shift8_gravitysap_nonce')
+        ));
+    }
+
+    /**
+     * Debug logging function
+     */
+    private function debug_log($message, $data = null) {
+        // Check if debug logging is enabled
+        $settings = get_option('shift8_gravitysap_settings', array());
+        if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
+            return;
+        }
+
+        // Format the log message
+        $log_message = '[Shift8 GravitySAP] ' . $message;
+        if ($data !== null) {
+            $log_message .= ' - Data: ' . print_r($data, true);
+        }
+
+        // Log to WordPress debug log
+        error_log($log_message);
     }
 
     /**
      * AJAX handler for testing SAP connection
      */
     public function ajax_test_connection() {
-        if (!current_user_can('manage_options')) {
-            wp_die(esc_html__('Insufficient permissions', 'shift8-gravitysap'));
-        }
-
-        $settings = get_option('shift8_gravitysap_settings', array());
-        
-        // Decrypt password for testing
-        if (!empty($settings['sap_password'])) {
-            $settings['sap_password'] = self::decrypt_password($settings['sap_password']);
-        }
-
         try {
-            $sap_service = new Shift8_GravitySAP_SAP_Service($settings);
-            $result = $sap_service->test_connection();
+            // Verify nonce
+            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'shift8_gravitysap_nonce')) {
+                throw new Exception('Security check failed');
+            }
+
+            // Get settings
+            $settings = get_option('shift8_gravitysap_settings');
+            if (!$settings) {
+                throw new Exception('SAP settings not found');
+            }
+
+            // Log settings (excluding password)
+            $this->debug_log('Test Connection - Settings', array(
+                'endpoint' => $settings['sap_endpoint'],
+                'company_db' => $settings['sap_company_db'],
+                'username' => $settings['sap_username']
+            ));
+
+            // Ensure endpoint ends with /
+            $endpoint = rtrim($settings['sap_endpoint'], '/') . '/';
             
-            wp_send_json_success($result);
+            // Decrypt password for API call
+            $password = $this->decrypt_password($settings['sap_password']);
+            
+            // Prepare login data
+            $login_data = array(
+                'CompanyDB' => $settings['sap_company_db'],
+                'UserName' => $settings['sap_username'],
+                'Password' => $password // Send plain text password to SAP
+            );
+
+            $this->debug_log('Test Connection - Request URL', $endpoint . 'Login');
+
+            // Make the request
+            $response = wp_remote_post($endpoint . 'Login', array(
+                'headers' => array(
+                    'Content-Type' => 'application/json'
+                ),
+                'body' => json_encode($login_data),
+                'timeout' => 30,
+                'sslverify' => false
+            ));
+
+            if (is_wp_error($response)) {
+                $this->debug_log('Test Connection - WP Error', $response->get_error_message());
+                throw new Exception('Connection failed: ' . $response->get_error_message());
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            $headers = wp_remote_retrieve_headers($response);
+
+            $this->debug_log('Test Connection - Response', array(
+                'code' => $response_code,
+                'headers' => $headers,
+                'body' => $body
+            ));
+
+            if ($response_code === 200) {
+                $data = json_decode($body, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw new Exception('Invalid JSON response: ' . json_last_error_msg());
+                }
+                wp_send_json_success(array(
+                    'message' => 'Successfully connected to SAP Service Layer',
+                    'details' => array(
+                        'session_id' => $data['SessionId'] ?? null,
+                        'version' => $data['Version'] ?? null,
+                        'session_timeout' => $data['SessionTimeout'] ?? null
+                    )
+                ));
+            } else {
+                $error_data = json_decode($body, true);
+                $error_message = isset($error_data['error']['message']['value']) 
+                    ? $error_data['error']['message']['value'] 
+                    : 'HTTP ' . $response_code . ' - ' . $body;
+                throw new Exception('Connection failed: ' . $error_message);
+            }
+
         } catch (Exception $e) {
+            $this->debug_log('Test Connection - Exception', $e->getMessage());
             wp_send_json_error(array(
-                'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
+                'details' => array(
+                    'endpoint' => $settings['sap_endpoint'] ?? '',
+                    'company_db' => $settings['sap_company_db'] ?? '',
+                    'username' => $settings['sap_username'] ?? ''
+                )
             ));
         }
     }
@@ -489,5 +576,18 @@ class Shift8_GravitySAP_Admin {
         wp_send_json_success(array(
             'message' => esc_html__('Log cleared successfully', 'shift8-gravitysap')
         ));
+    }
+
+    /**
+     * AJAX handler for getting recent log entries
+     */
+    public function ajax_get_logs() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Insufficient permissions', 'shift8-gravitysap')));
+        }
+
+        // Get the last 50 log entries
+        $logs = Shift8_GravitySAP_Logger::get_log_entries(50);
+        wp_send_json_success(array('logs' => $logs));
     }
 } 
