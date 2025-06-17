@@ -53,27 +53,7 @@ if ($result['success']) {
     echo "Error: " . $result['message'] . "\n";
 }
 
-// Test authentication
-try {
-    echo "Testing SAP authentication...\n";
-    
-    $auth_service = new \Shift8\GravitySAP\Services\AuthService($settings);
-    $session_id = $auth_service->authenticate();
-    
-    echo "Authentication successful!\n";
-    echo "Session ID: " . $session_id . "\n";
-    
-    // Test session headers
-    $headers = $auth_service->get_session_headers();
-    echo "Session headers: " . print_r($headers, true) . "\n";
-    
-    // Test logout
-    $auth_service->logout();
-    echo "Logout successful!\n";
-    
-} catch (\Exception $e) {
-    echo "Authentication failed: " . $e->getMessage() . "\n";
-}
+// Note: Namespaced AuthService class was removed - authentication is handled within SAP service
 
 // Test SAP service
 try {

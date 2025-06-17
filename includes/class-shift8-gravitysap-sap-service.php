@@ -47,7 +47,17 @@ class Shift8_GravitySAP_SAP_Service {
         $this->endpoint = rtrim($settings['sap_endpoint'], '/');
         $this->company_db = $settings['sap_company_db'];
         $this->username = $settings['sap_username'];
-        $this->password = $settings['sap_password'];
+        
+        // Handle both encrypted and decrypted passwords
+        // If password looks encrypted (base64), decrypt it; otherwise use as-is
+        $password = $settings['sap_password'];
+        if (!empty($password) && base64_encode(base64_decode($password, true)) === $password) {
+            // Looks like base64 - try to decrypt
+            $this->password = shift8_gravitysap_decrypt_password($password);
+        } else {
+            // Use as-is (already decrypted by caller)
+            $this->password = $password;
+        }
     }
 
     /**
@@ -452,35 +462,16 @@ class Shift8_GravitySAP_SAP_Service {
     }
 
     /**
-     * Decrypt password using the same method as admin class
+     * Decrypt password using the global function (removed - use global function instead)
      */
-    private function decrypt_password($encrypted_password) {
-        if (empty($encrypted_password)) {
-            return '';
-        }
-        
-        // Get encryption key from WordPress
-        $key = wp_salt('auth');
-        
-        // Decrypt the password
-        $decrypted = openssl_decrypt(
-            $encrypted_password,
-            'AES-256-CBC',
-            $key,
-            0,
-            substr($key, 0, 16)
-        );
-        
-        return $decrypted;
-    }
 
     /**
      * Authenticate with SAP Service Layer
      */
     private function authenticate() {
-        // Decrypt the password using the same method as the working test connection
-        $password_to_use = $this->decrypt_password($this->password);
-        shift8_gravitysap_debug_log('Using decrypted password (same as working ajax_test_connection method)');
+        // Use the password as-is (it should already be decrypted by the caller)
+        $password_to_use = $this->password;
+        shift8_gravitysap_debug_log('Using password as provided by caller (admin class handles decryption)');
 
         // Ensure all values are valid UTF-8 for JSON encoding
         $company_db_clean = mb_convert_encoding($this->company_db, 'UTF-8', 'UTF-8');

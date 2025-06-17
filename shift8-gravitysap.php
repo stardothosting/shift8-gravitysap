@@ -183,10 +183,7 @@ if (version_compare(PHP_VERSION, '7.4', '<')) {
     return;
 }
 
-// Load Composer autoloader
-if (file_exists(SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'vendor/autoload.php')) {
-    require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'vendor/autoload.php';
-}
+// Composer autoloader not needed - plugin uses WordPress-style class loading
 
 /**
  * Main plugin class
@@ -365,7 +362,7 @@ class Shift8_GravitySAP {
         $menu_items[] = array(
             'name' => 'sap_integration',
             'label' => esc_html__('SAP Integration', 'shift8-gravitysap'),
-            'icon' => '<i class="fa fa-cog"></i>'
+            'icon' => 'dashicons-admin-links dashicons' // Alternatives: dashicons-database, dashicons-cloud, dashicons-networking, dashicons-plugins-checked
         );
         return $menu_items;
     }
