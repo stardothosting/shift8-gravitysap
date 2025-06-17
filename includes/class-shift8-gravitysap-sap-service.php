@@ -54,6 +54,12 @@ class Shift8_GravitySAP_SAP_Service {
      * Create Business Partner in SAP
      */
     public function create_business_partner($business_partner_data) {
+        // First, let's check what numbering series are actually available
+        shift8_gravitysap_debug_log('=== STARTING BUSINESS PARTNER CREATION ===');
+        
+        // Check available series and log the response
+        $this->debug_numbering_series();
+        
         // Ensure we have a valid session
         if (!$this->ensure_authenticated()) {
             throw new Exception('Failed to authenticate with SAP');
@@ -68,22 +74,22 @@ class Shift8_GravitySAP_SAP_Service {
             throw new Exception('CardType is required for Business Partner creation');
         }
 
-        // Try to get available numbering series first
-        $available_series = $this->get_available_numbering_series();
-        if (!empty($available_series)) {
-            // Use the first available series
-            $business_partner_data['Series'] = $available_series[0];
-            shift8_gravitysap_debug_log('Using numbering series: ' . $available_series[0]);
-        } else {
-            // Fallback: Generate a short CardCode that fits SAP B1 limits (max 15 characters)
-            if (empty($business_partner_data['CardCode'])) {
-                // Use last 6 digits of timestamp + 4 random characters = 12 chars total
-                $timestamp_short = substr(time(), -6);
-                $random = substr(str_shuffle('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'), 0, 4);
-                $business_partner_data['CardCode'] = 'BP' . $timestamp_short . $random;
-                shift8_gravitysap_debug_log('No numbering series found, using manual CardCode: ' . $business_partner_data['CardCode']);
-            }
+        // Try a different approach: Create as Lead type (cLid) instead of Customer
+        // Leads might not require numbering series
+        $business_partner_data['CardType'] = 'cLid';
+        shift8_gravitysap_debug_log('Changed CardType to cLid (Lead) to avoid numbering series issues');
+        
+        // Generate a very simple CardCode
+        if (empty($business_partner_data['CardCode'])) {
+            $simple_code = 'L' . time();  // L + timestamp
+            $business_partner_data['CardCode'] = $simple_code;
+            shift8_gravitysap_debug_log('Generated Lead CardCode: ' . $simple_code);
         }
+        
+        // Ensure no Series field
+        unset($business_partner_data['Series']);
+        
+        shift8_gravitysap_debug_log('Final Lead Data before sending to SAP', $business_partner_data);
 
         $response = $this->make_request('POST', '/BusinessPartners', $business_partner_data);
 
@@ -185,6 +191,40 @@ class Shift8_GravitySAP_SAP_Service {
         }
 
         return $response;
+    }
+
+    /**
+     * Debug numbering series configuration
+     */
+    private function debug_numbering_series() {
+        try {
+            shift8_gravitysap_debug_log('=== DEBUGGING NUMBERING SERIES ===');
+            
+            // Try to get series information
+            $series_response = $this->make_request('GET', '/SeriesService_GetDocumentSeries');
+            if (!is_wp_error($series_response)) {
+                $series_code = wp_remote_retrieve_response_code($series_response);
+                $series_body = wp_remote_retrieve_body($series_response);
+                shift8_gravitysap_debug_log('All Series Response', array(
+                    'code' => $series_code,
+                    'body' => substr($series_body, 0, 500) // Truncate for log
+                ));
+            }
+            
+            // Also try to get Business Partner specific series
+            $bp_series_response = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
+            if (!is_wp_error($bp_series_response)) {
+                $bp_code = wp_remote_retrieve_response_code($bp_series_response);
+                $bp_body = wp_remote_retrieve_body($bp_series_response);
+                shift8_gravitysap_debug_log('BP Series Response', array(
+                    'code' => $bp_code,
+                    'body' => $bp_body
+                ));
+            }
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Debug numbering series failed: ' . $e->getMessage());
+        }
     }
 
     /**
