@@ -25,6 +25,8 @@ class Shift8_GravitySAP_Admin {
         add_action('wp_ajax_shift8_gravitysap_test_connection', array($this, 'ajax_test_connection'));
         add_action('wp_ajax_shift8_gravitysap_get_logs', array($this, 'ajax_get_logs'));
         add_action('wp_ajax_shift8_gravitysap_clear_log', array($this, 'ajax_clear_log'));
+        add_action('wp_ajax_shift8_gravitysap_clear_custom_log', array($this, 'ajax_clear_custom_log'));
+        add_action('wp_ajax_shift8_gravitysap_get_custom_logs', array($this, 'ajax_get_custom_logs'));
     }
 
     /**
@@ -447,23 +449,10 @@ class Shift8_GravitySAP_Admin {
     }
 
     /**
-     * Debug logging function
+     * Debug logging function - delegates to global function
      */
     private function debug_log($message, $data = null) {
-        // Check if debug logging is enabled
-        $settings = get_option('shift8_gravitysap_settings', array());
-        if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
-            return;
-        }
-
-        // Format the log message
-        $log_message = '[Shift8 GravitySAP] ' . $message;
-        if ($data !== null) {
-            $log_message .= ' - Data: ' . print_r($data, true);
-        }
-
-        // Log to WordPress debug log
-        error_log($log_message);
+        shift8_gravitysap_debug_log($message, $data);
     }
 
     /**
@@ -589,5 +578,105 @@ class Shift8_GravitySAP_Admin {
         // Get the last 50 log entries
         $logs = Shift8_GravitySAP_Logger::get_log_entries(50);
         wp_send_json_success(array('logs' => $logs));
+    }
+
+    /**
+     * Get the custom log file path
+     */
+    public static function get_log_file_path() {
+        $upload_dir = wp_upload_dir();
+        return $upload_dir['basedir'] . '/shift8-gravitysap-debug.log';
+    }
+
+    /**
+     * Get the custom log file URL for download
+     */
+    public static function get_log_file_url() {
+        $upload_dir = wp_upload_dir();
+        return $upload_dir['baseurl'] . '/shift8-gravitysap-debug.log';
+    }
+
+    /**
+     * Clear the custom log file
+     */
+    public static function clear_custom_log() {
+        $log_file = self::get_log_file_path();
+        if (file_exists($log_file)) {
+            return unlink($log_file);
+        }
+        return true;
+    }
+
+    /**
+     * Get recent log entries from custom log file
+     */
+    public static function get_recent_log_entries($lines = 50) {
+        $log_file = self::get_log_file_path();
+        if (!file_exists($log_file)) {
+            return array();
+        }
+
+        // Read the file and get the last N lines
+        $file_lines = file($log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($file_lines === false) {
+            return array();
+        }
+
+        // Get the last N lines
+        return array_slice($file_lines, -$lines);
+    }
+
+    /**
+     * Get log file size in human readable format
+     */
+    public static function get_log_file_size() {
+        $log_file = self::get_log_file_path();
+        if (!file_exists($log_file)) {
+            return '0 B';
+        }
+
+        $size = filesize($log_file);
+        $units = array('B', 'KB', 'MB', 'GB');
+        $power = $size > 0 ? floor(log($size, 1024)) : 0;
+        return number_format($size / pow(1024, $power), 2, '.', ',') . ' ' . $units[$power];
+    }
+
+    /**
+     * AJAX handler for clearing custom log
+     */
+    public function ajax_clear_custom_log() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Insufficient permissions', 'shift8-gravitysap')));
+        }
+
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'shift8_gravitysap_nonce')) {
+            wp_send_json_error(array('message' => esc_html__('Security check failed', 'shift8-gravitysap')));
+        }
+
+        if (self::clear_custom_log()) {
+            wp_send_json_success(array('message' => esc_html__('Log cleared successfully', 'shift8-gravitysap')));
+        } else {
+            wp_send_json_error(array('message' => esc_html__('Failed to clear log', 'shift8-gravitysap')));
+        }
+    }
+
+    /**
+     * AJAX handler for getting recent custom log entries
+     */
+    public function ajax_get_custom_logs() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => esc_html__('Insufficient permissions', 'shift8-gravitysap')));
+        }
+
+        $logs = self::get_recent_log_entries(100);
+        $log_size = self::get_log_file_size();
+        $log_exists = file_exists(self::get_log_file_path());
+
+        wp_send_json_success(array(
+            'logs' => $logs,
+            'log_size' => $log_size,
+            'log_exists' => $log_exists,
+            'log_file_url' => $log_exists ? self::get_log_file_url() : null
+        ));
     }
 } 

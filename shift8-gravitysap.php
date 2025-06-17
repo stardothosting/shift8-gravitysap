@@ -38,7 +38,7 @@ if (!defined('ABSPATH')) {
 
 // Immediate test to see if this file is being loaded
 if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-    error_log('SHIFT8 GRAVITYSAP: Plugin file is being loaded by WordPress');
+    shift8_gravitysap_debug_log('Plugin file is being loaded by WordPress');
 }
 
 // Plugin constants
@@ -47,6 +47,43 @@ define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_BASENAME', plugin_basename(__FILE__));
+
+/**
+ * Global debug logging function
+ * Checks if debug logging is enabled before logging
+ */
+function shift8_gravitysap_debug_log($message, $data = null) {
+    // Check if debug logging is enabled
+    $settings = get_option('shift8_gravitysap_settings', array());
+    if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
+        return;
+    }
+
+    // Format the log message
+    $timestamp = current_time('Y-m-d H:i:s');
+    $log_message = '[' . $timestamp . '] [Shift8 GravitySAP] ' . $message;
+    if ($data !== null) {
+        $log_message .= ' - Data: ' . print_r($data, true);
+    }
+    $log_message .= PHP_EOL;
+
+    // Get WordPress uploads directory
+    $upload_dir = wp_upload_dir();
+    $log_file = $upload_dir['basedir'] . '/shift8-gravitysap-debug.log';
+
+    // Ensure the uploads directory exists and is writable
+    if (!is_dir($upload_dir['basedir'])) {
+        wp_mkdir_p($upload_dir['basedir']);
+    }
+
+    // Write to custom log file
+    if (is_writable($upload_dir['basedir']) || is_writable($log_file)) {
+        file_put_contents($log_file, $log_message, FILE_APPEND | LOCK_EX);
+    } else {
+        // Fallback to system error log if custom log file isn't writable
+        error_log('[Shift8 GravitySAP] ' . $message . ($data ? ' - Data: ' . print_r($data, true) : ''));
+    }
+}
 
 // Check for minimum PHP version
 if (version_compare(PHP_VERSION, '7.4', '<')) {
@@ -94,9 +131,7 @@ class Shift8_GravitySAP {
      * Initialize plugin
      */
     public function init() {
-        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-            error_log('Shift8 GravitySAP: Plugin init() called');
-        }
+        shift8_gravitysap_debug_log('Plugin init() called');
         
         // Load textdomain
         load_plugin_textdomain('shift8-gravitysap', false, dirname(plugin_basename(__FILE__)) . '/languages');
@@ -108,10 +143,10 @@ class Shift8_GravitySAP {
         
         // Debug Gravity Forms detection
         $gf_active = $this->is_gravity_forms_active();
-        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-            error_log('Shift8 GravitySAP: Gravity Forms active check: ' . ($gf_active ? 'true' : 'false'));
-            error_log('Shift8 GravitySAP: GFForms class exists: ' . (class_exists('GFForms') ? 'true' : 'false'));
-        }
+        shift8_gravitysap_debug_log('Gravity Forms active check', array(
+            'gf_active' => $gf_active ? 'true' : 'false',
+            'GFForms_exists' => class_exists('GFForms') ? 'true' : 'false'
+        ));
         
         // Load the Gravity Forms Add-On with fallback integration
         add_action('gform_loaded', array($this, 'load_addon'), 5);
@@ -156,8 +191,6 @@ class Shift8_GravitySAP {
         
         // Process form submissions
         add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2);
-        
-        error_log('Shift8 GravitySAP: Direct integration hooks registered');
     }
 
     /**
@@ -170,41 +203,41 @@ class Shift8_GravitySAP {
             return;
         }
         
-        error_log('Shift8 GravitySAP: load_addon() called');
+        shift8_gravitysap_debug_log('load_addon() called');
         
         if (!class_exists('GFForms')) {
-            error_log('Shift8 GravitySAP: GFForms class not found');
+            shift8_gravitysap_debug_log('GFForms class not found');
             return;
         }
         
         if (!method_exists('GFForms', 'include_addon_framework')) {
-            error_log('Shift8 GravitySAP: GFForms::include_addon_framework method not found');
+            shift8_gravitysap_debug_log('GFForms::include_addon_framework method not found');
             return;
         }
         
         // Check if addon framework is already loaded
         if (!class_exists('GFAddOn')) {
-            error_log('Shift8 GravitySAP: Including addon framework');
+            shift8_gravitysap_debug_log('Including addon framework');
             GFForms::include_addon_framework();
         }
         
         if (!class_exists('GFAddOn')) {
-            error_log('Shift8 GravitySAP: GFAddOn class still not available after including framework');
+            shift8_gravitysap_debug_log('GFAddOn class still not available after including framework');
             return;
         }
         
         require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-gf-shift8-gravitysap-addon.php';
         
         if (!class_exists('GF_Shift8_GravitySAP_AddOn')) {
-            error_log('Shift8 GravitySAP: GF_Shift8_GravitySAP_AddOn class not found after including file');
+            shift8_gravitysap_debug_log('GF_Shift8_GravitySAP_AddOn class not found after including file');
             return;
         }
         
-        error_log('Shift8 GravitySAP: Registering addon');
+        shift8_gravitysap_debug_log('Registering addon');
         GFAddOn::register('GF_Shift8_GravitySAP_AddOn');
         
         $addon_loaded = true;
-        error_log('Shift8 GravitySAP: Add-on registration complete');
+        shift8_gravitysap_debug_log('Add-on registration complete');
     }
     
     /**
@@ -417,8 +450,6 @@ class Shift8_GravitySAP {
 }
 
 // Initialize plugin
-if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-    error_log('Shift8 GravitySAP: Plugin file loaded, initializing...');
-    error_log('Shift8 GravitySAP: Starting plugin initialization');
-}
+shift8_gravitysap_debug_log('Plugin file loaded, initializing...');
+shift8_gravitysap_debug_log('Starting plugin initialization');
 Shift8_GravitySAP::get_instance(); 

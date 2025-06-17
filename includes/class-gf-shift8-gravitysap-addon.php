@@ -20,7 +20,7 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Version
      */
-    protected $_version = '1.0.0';
+    protected $_version = SHIFT8_GRAVITYSAP_VERSION;
     
     /**
      * Minimum Gravity Forms version
@@ -76,6 +76,8 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
      * Enable form settings
      */
     protected $_enable_rg_autoupgrade = false;
+    protected $_has_form_settings = true;
+    protected $_supports_feed_order = false;
 
     /**
      * Singleton instance
@@ -109,15 +111,199 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     public function init() {
         parent::init();
         
+        shift8_gravitysap_debug_log('Add-on init() called');
+        
         // Include SAP service class
         require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
         
+        // Add form submission handler
         add_action('gform_after_submission', array($this, 'handle_form_submission'), 10, 2);
         
-        // Debug: Log that the add-on is initialized
-        if (function_exists('error_log')) {
-            error_log('Shift8 GravitySAP Add-On initialized successfully');
+        // Add feed settings
+        add_filter('gform_addon_feed_settings_fields', array($this, 'feed_settings_fields'), 10, 2);
+        
+        // Debug settings save - MORE COMPREHENSIVE HOOKS
+        add_action('gform_before_save_form_settings', array($this, 'debug_before_save_settings'), 10, 2);
+        add_action('gform_after_save_form_settings', array($this, 'debug_after_save_settings'), 10, 2);
+        add_action('gform_pre_save_feed', array($this, 'debug_pre_save_feed'), 10, 2);
+        add_action('gform_post_save_feed', array($this, 'debug_post_save_feed'), 10, 2);
+        
+        // Add form settings page debugging
+        add_action('gform_form_settings_page_sap_integration', array($this, 'debug_form_settings_page'), 10);
+        add_action('gform_form_settings', array($this, 'debug_form_settings'), 10, 2);
+        
+        // Add more debugging hooks
+        add_action('init', array($this, 'debug_init'), 20);
+        add_action('admin_init', array($this, 'debug_admin_init'), 20);
+        add_action('wp_loaded', array($this, 'debug_wp_loaded'), 20);
+        
+        // Debug all $_POST and $_GET requests to admin pages
+        if (is_admin()) {
+            add_action('admin_head', array($this, 'debug_admin_request'), 1);
         }
+        
+        shift8_gravitysap_debug_log('Add-on initialized successfully');
+    }
+
+    /**
+     * Debug init hook
+     */
+    public function debug_init() {
+        if (isset($_GET['page']) && $_GET['page'] === 'gf_edit_forms' && isset($_GET['subview']) && $_GET['subview'] === 'sap_integration') {
+            shift8_gravitysap_debug_log('Init hook - SAP settings page detected', array(
+                'GET' => $_GET,
+                'POST' => $_POST,
+                'current_action' => current_action()
+            ));
+        }
+    }
+
+    /**
+     * Debug admin init hook
+     */
+    public function debug_admin_init() {
+        if (isset($_GET['page']) && $_GET['page'] === 'gf_edit_forms' && isset($_GET['subview']) && $_GET['subview'] === 'sap_integration') {
+            shift8_gravitysap_debug_log('Admin init hook - SAP settings page detected', array(
+                'GET' => $_GET,
+                'POST' => $_POST,
+                'doing_action' => doing_action()
+            ));
+        }
+    }
+
+    /**
+     * Debug wp loaded hook
+     */
+    public function debug_wp_loaded() {
+        if (isset($_GET['page']) && $_GET['page'] === 'gf_edit_forms' && isset($_GET['subview']) && $_GET['subview'] === 'sap_integration') {
+            shift8_gravitysap_debug_log('WP loaded hook - SAP settings page detected', array(
+                'GET' => $_GET,
+                'POST' => $_POST
+            ));
+        }
+    }
+
+    /**
+     * Debug admin request
+     */
+    public function debug_admin_request() {
+        if (isset($_GET['page']) && $_GET['page'] === 'gf_edit_forms') {
+            shift8_gravitysap_debug_log('Admin page request detected', array(
+                'GET' => $_GET,
+                'POST' => $_POST,
+                'REQUEST_METHOD' => $_SERVER['REQUEST_METHOD'],
+                'current_screen' => get_current_screen() ? get_current_screen()->id : 'unknown'
+            ));
+        }
+    }
+
+    /**
+     * Debug before save settings
+     */
+    public function debug_before_save_settings($form, $is_new) {
+        shift8_gravitysap_debug_log('Before save form settings', array(
+            'form' => $form,
+            'is_new' => $is_new,
+            'POST' => $_POST,
+            'REQUEST' => $_REQUEST
+        ));
+    }
+
+    /**
+     * Debug after save settings
+     */
+    public function debug_after_save_settings($form, $is_new) {
+        shift8_gravitysap_debug_log('After save form settings', array(
+            'form' => $form,
+            'is_new' => $is_new,
+            'POST' => $_POST,
+            'REQUEST' => $_REQUEST
+        ));
+    }
+
+    /**
+     * Debug pre save feed
+     */
+    public function debug_pre_save_feed($feed, $form) {
+        shift8_gravitysap_debug_log('Pre save feed', array(
+            'feed' => $feed,
+            'form' => $form,
+            'POST' => $_POST,
+            'REQUEST' => $_REQUEST
+        ));
+    }
+
+    /**
+     * Debug post save feed
+     */
+    public function debug_post_save_feed($feed, $form) {
+        shift8_gravitysap_debug_log('Post save feed', array(
+            'feed' => $feed,
+            'form' => $form,
+            'POST' => $_POST,
+            'REQUEST' => $_REQUEST
+        ));
+    }
+
+    /**
+     * Debug form settings page
+     */
+    public function debug_form_settings_page() {
+        shift8_gravitysap_debug_log('Form settings page loaded');
+    }
+
+    /**
+     * Debug form settings
+     */
+    public function debug_form_settings($form, $subview) {
+        shift8_gravitysap_debug_log('Form settings called with subview: ' . $subview);
+    }
+
+    /**
+     * Override get_form_settings to add debugging
+     */
+    public function get_form_settings($form) {
+        shift8_gravitysap_debug_log('get_form_settings called', array('form' => $form));
+        return parent::get_form_settings($form);
+    }
+
+    /**
+     * Override save_form_settings to add debugging
+     */
+    public function save_form_settings($form, $settings) {
+        shift8_gravitysap_debug_log('save_form_settings called', array(
+            'form' => $form,
+            'settings' => $settings
+        ));
+        return parent::save_form_settings($form, $settings);
+    }
+
+    /**
+     * Override save_settings to add debugging
+     */
+    public function save_settings($settings) {
+        shift8_gravitysap_debug_log('Save settings called', array(
+            'settings' => $settings,
+            'POST' => $_POST,
+            'REQUEST' => $_REQUEST
+        ));
+        
+        return parent::save_settings($settings);
+    }
+
+    /**
+     * Override save_feed_settings to add debugging
+     */
+    public function save_feed_settings($feed_id, $form_id, $settings) {
+        shift8_gravitysap_debug_log('Save feed settings called', array(
+            'feed_id' => $feed_id,
+            'form_id' => $form_id,
+            'settings' => $settings,
+            'POST' => $_POST,
+            'REQUEST' => $_REQUEST
+        ));
+        
+        return parent::save_feed_settings($feed_id, $form_id, $settings);
     }
 
     /**
@@ -175,11 +361,20 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     /**
      * Configures the settings which should be rendered on the Form Settings > SAP tab
      */
-    public function form_settings_fields($form) {
+    public function feed_settings_fields() {
+        $this->log_debug('Feed settings fields called');
+        
         return array(
             array(
-                'title'  => esc_html__('SAP Business One Field Mapping', 'shift8-gravitysap'),
+                'title'  => esc_html__('SAP Business One Feed Settings', 'shift8-gravitysap'),
                 'fields' => array(
+                    array(
+                        'name'    => 'feed_name',
+                        'label'   => esc_html__('Feed Name', 'shift8-gravitysap'),
+                        'type'    => 'text',
+                        'class'   => 'medium',
+                        'tooltip' => esc_html__('Enter a feed name to uniquely identify this setup.', 'shift8-gravitysap'),
+                    ),
                     array(
                         'name'    => 'sap_entity_type',
                         'label'   => esc_html__('SAP Entity Type', 'shift8-gravitysap'),
@@ -196,67 +391,77 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
                         ),
                     ),
                     array(
-                        'name'  => 'field_mappings',
-                        'label' => esc_html__('Field Mappings', 'shift8-gravitysap'),
-                        'type'  => 'field_mappings',
-                    ),
-                ),
-            ),
+                        'name'    => 'mappedFields',
+                        'label'   => esc_html__('Field Mappings', 'shift8-gravitysap'),
+                        'type'    => 'field_map',
+                        'tooltip' => esc_html__('Map form fields to SAP Business Partner fields.', 'shift8-gravitysap'),
+                        'field_map' => array(
+                            array(
+                                'name'     => 'CardName',
+                                'label'    => esc_html__('Card Name', 'shift8-gravitysap'),
+                                'required' => true
+                            ),
+                            array(
+                                'name'     => 'EmailAddress',
+                                'label'    => esc_html__('Email', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'Phone1',
+                                'label'    => esc_html__('Phone', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.Street',
+                                'label'    => esc_html__('Street Address', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.City',
+                                'label'    => esc_html__('City', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.Country',
+                                'label'    => esc_html__('Country', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.State',
+                                'label'    => esc_html__('State/Province', 'shift8-gravitysap'),
+                                'required' => false
+                            ),
+                            array(
+                                'name'     => 'BPAddresses.ZipCode',
+                                'label'    => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+                                'required' => false
+                            )
+                        )
+                    )
+                )
+            )
         );
     }
 
-    public function settings_field_mappings($field, $echo = true) {
-        $form = GFAPI::get_form($this->get_current_form_id());
-        $mappings = $this->get_form_setting('field_mappings') ?: array();
-        
-        $html = '<div class="field-mappings">';
-        $html .= '<table class="widefat">';
-        $html .= '<thead><tr>';
-        $html .= '<th>' . esc_html__('Form Field', 'shift8-gravitysap') . '</th>';
-        $html .= '<th>' . esc_html__('SAP Field', 'shift8-gravitysap') . '</th>';
-        $html .= '</tr></thead>';
-        $html .= '<tbody>';
-        
-        foreach ($form['fields'] as $form_field) {
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html($form_field->label) . '</td>';
-            $html .= '<td>';
-            $html .= '<input type="text" name="field_mappings[' . esc_attr($form_field->id) . ']" ';
-            $html .= 'value="' . esc_attr($mappings[$form_field->id] ?? '') . '" class="medium" />';
-            $html .= '</td>';
-            $html .= '</tr>';
-        }
-        
-        $html .= '</tbody></table>';
-        $html .= '</div>';
-        
-        if ($echo) {
-            echo $html;
-        }
-        return $html;
-    }
-
-    public function handle_form_submission($entry, $form) {
-        // Get form settings
-        $settings = $this->get_form_settings($form);
-        if (!$settings) {
-            $this->log_debug('No form settings found for form #' . $form['id']);
-            return;
-        }
+    /**
+     * Process the feed.
+     *
+     * @param array $feed  The feed object to be processed.
+     * @param array $entry The entry object currently being processed.
+     * @param array $form  The form object currently being processed.
+     */
+    public function process_feed($feed, $entry, $form) {
+        $this->log_debug('Processing feed', array(
+            'feed' => $feed,
+            'entry' => $entry,
+            'form' => $form
+        ));
 
         // Get field mappings
-        $mappings = $settings['field_mappings'] ?? array();
+        $mappings = $feed['meta']['mappedFields'] ?? array();
         if (empty($mappings)) {
             $this->log_debug('No field mappings found for form #' . $form['id']);
             return;
-        }
-
-        // Prepare data for SAP
-        $sap_data = array();
-        foreach ($mappings as $form_field_id => $sap_field) {
-            if (!empty($sap_field)) {
-                $sap_data[$sap_field] = rgar($entry, $form_field_id);
-            }
         }
 
         // Get SAP settings
@@ -266,18 +471,25 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
             return;
         }
 
-        // Send data to SAP
+        // Prepare data for SAP
+        $sap_data = array();
+        foreach ($mappings as $sap_field => $form_field_id) {
+            if (!empty($form_field_id)) {
+                $sap_data[$sap_field] = rgar($entry, $form_field_id);
+            }
+        }
+
         try {
-            $endpoint = rtrim($sap_settings['sap_endpoint'], '/') . '/';
-            $entity_type = $settings['sap_entity_type'];
-            
-            // First, get session
+            // Get session
             $session = $this->get_sap_session($sap_settings);
             if (!$session) {
                 throw new Exception('Failed to get SAP session');
             }
 
             // Create entity in SAP
+            $endpoint = rtrim($sap_settings['sap_endpoint'], '/') . '/';
+            $entity_type = $feed['meta']['sap_entity_type'];
+            
             $response = wp_remote_post($endpoint . $entity_type, array(
                 'headers' => array(
                     'Content-Type' => 'application/json',
@@ -313,6 +525,9 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
         }
     }
 
+    /**
+     * Get SAP session
+     */
     private function get_sap_session($settings) {
         try {
             $endpoint = rtrim($settings['sap_endpoint'], '/') . '/';
@@ -358,11 +573,108 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
         }
     }
 
+    /**
+     * Log debug information
+     */
     private function log_debug($message, $data = null) {
-        if (class_exists('GFLogging')) {
-            GFLogging::include_logger();
-            GFLogging::log_message('shift8-gravitysap', $message, KLogger::DEBUG, $data);
+        shift8_gravitysap_debug_log($message, $data);
+    }
+
+    /**
+     * Override form_settings_fields to ensure form settings work
+     */
+    public function form_settings_fields($form) {
+        shift8_gravitysap_debug_log('form_settings_fields called', array(
+            'form_id' => $form['id'],
+            'POST' => $_POST,
+            'GET' => $_GET
+        ));
+        
+        return array(
+            array(
+                'title'  => esc_html__('SAP Business One Integration', 'shift8-gravitysap'),
+                'fields' => array(
+                    array(
+                        'name'    => 'sap_enabled',
+                        'label'   => esc_html__('Enable SAP Integration', 'shift8-gravitysap'),
+                        'type'    => 'checkbox',
+                        'tooltip' => esc_html__('Enable this form to send data to SAP Business One', 'shift8-gravitysap'),
+                        'choices' => array(
+                            array(
+                                'label' => esc_html__('Send form submissions to SAP Business One', 'shift8-gravitysap'),
+                                'value' => '1'
+                            )
+                        )
+                    ),
+                    array(
+                        'name'    => 'sap_entity_type',
+                        'label'   => esc_html__('SAP Entity Type', 'shift8-gravitysap'),
+                        'type'    => 'select',
+                        'choices' => array(
+                            array(
+                                'label' => esc_html__('Customer', 'shift8-gravitysap'),
+                                'value' => 'customer'
+                            ),
+                            array(
+                                'label' => esc_html__('Vendor', 'shift8-gravitysap'),
+                                'value' => 'vendor'
+                            ),
+                            array(
+                                'label' => esc_html__('Lead', 'shift8-gravitysap'),
+                                'value' => 'lead'
+                            )
+                        )
+                    ),
+                    array(
+                        'name'    => 'field_mappings',
+                        'label'   => esc_html__('Field Mappings', 'shift8-gravitysap'),
+                        'type'    => 'field_mappings',
+                        'tooltip' => esc_html__('Map your form fields to SAP fields', 'shift8-gravitysap')
+                    )
+                )
+            )
+        );
+    }
+
+    /**
+     * Custom field for field mappings
+     */
+    public function settings_field_mappings($field, $echo = true) {
+        shift8_gravitysap_debug_log('settings_field_mappings called', array(
+            'field' => $field,
+            'current_form_id' => $this->get_current_form_id(),
+            'POST' => $_POST
+        ));
+        
+        $form_id = $this->get_current_form_id();
+        $form = GFAPI::get_form($form_id);
+        $mappings = $this->get_form_setting('field_mappings') ?: array();
+        
+        $html = '<div class="field-mappings">';
+        $html .= '<table class="widefat">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . esc_html__('Form Field', 'shift8-gravitysap') . '</th>';
+        $html .= '<th>' . esc_html__('SAP Field', 'shift8-gravitysap') . '</th>';
+        $html .= '</tr></thead>';
+        $html .= '<tbody>';
+        
+        foreach ($form['fields'] as $form_field) {
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html($form_field->label) . '</td>';
+            $html .= '<td>';
+            $html .= '<input type="text" name="field_mappings[' . esc_attr($form_field->id) . ']" ';
+            $html .= 'value="' . esc_attr($mappings[$form_field->id] ?? '') . '" class="medium" />';
+            $html .= '</td>';
+            $html .= '</tr>';
         }
+        
+        $html .= '</tbody></table>';
+        $html .= '</div>';
+        
+        if ($echo) {
+            echo $html;
+        }
+        return $html;
     }
 }
 

@@ -95,6 +95,42 @@ if (!defined('ABSPATH')) {
                     <?php submit_button(); ?>
                 </p>
             </form>
+            
+            <!-- Log Management Section -->
+            <?php if (isset($settings['sap_debug']) && $settings['sap_debug'] === '1'): ?>
+            <div class="shift8-gravitysap-logs" style="margin-top: 30px;">
+                <h2><?php esc_html_e('Debug Log Management', 'shift8-gravitysap'); ?></h2>
+                <div class="card">
+                    <h3><?php esc_html_e('Log File Information', 'shift8-gravitysap'); ?></h3>
+                    <div id="log-info">
+                        <p><strong><?php esc_html_e('Log File:', 'shift8-gravitysap'); ?></strong> 
+                           <code><?php echo esc_html(Shift8_GravitySAP_Admin::get_log_file_path()); ?></code></p>
+                        <p><strong><?php esc_html_e('Size:', 'shift8-gravitysap'); ?></strong> 
+                           <span id="log-size"><?php echo esc_html(Shift8_GravitySAP_Admin::get_log_file_size()); ?></span></p>
+                    </div>
+                    
+                    <p>
+                        <button type="button" id="view-logs" class="button">
+                            <?php esc_html_e('View Recent Logs', 'shift8-gravitysap'); ?>
+                        </button>
+                        <button type="button" id="clear-logs" class="button">
+                            <?php esc_html_e('Clear Log File', 'shift8-gravitysap'); ?>
+                        </button>
+                        <?php if (file_exists(Shift8_GravitySAP_Admin::get_log_file_path())): ?>
+                        <a href="<?php echo esc_url(Shift8_GravitySAP_Admin::get_log_file_url()); ?>" 
+                           class="button" download>
+                            <?php esc_html_e('Download Log File', 'shift8-gravitysap'); ?>
+                        </a>
+                        <?php endif; ?>
+                    </p>
+                    
+                    <div id="log-viewer" style="display: none; margin-top: 20px;">
+                        <h4><?php esc_html_e('Recent Log Entries', 'shift8-gravitysap'); ?></h4>
+                        <textarea id="log-content" readonly style="width: 100%; height: 300px; font-family: monospace; font-size: 12px;"></textarea>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 </div> 

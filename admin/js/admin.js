@@ -33,12 +33,12 @@ jQuery(document).ready(function($) {
     });
 
     // View logs
-    $('#view-log').on('click', function(e) {
+    $('#view-logs').on('click', function(e) {
         e.preventDefault();
         
         var $button = $(this);
         var $viewer = $('#log-viewer');
-        var $textarea = $viewer.find('textarea');
+        var $content = $('#log-content');
         
         $button.prop('disabled', true);
         
@@ -46,12 +46,13 @@ jQuery(document).ready(function($) {
             url: shift8GravitySAP.ajaxurl,
             type: 'POST',
             data: {
-                action: 'shift8_gravitysap_get_logs',
+                action: 'shift8_gravitysap_get_custom_logs',
                 nonce: shift8GravitySAP.nonce
             },
             success: function(response) {
                 if (response.success) {
-                    $textarea.val(response.data.logs.join('\n'));
+                    $content.val(response.data.logs.join('\n'));
+                    $('#log-size').text(response.data.log_size);
                     $viewer.show();
                 } else {
                     alert('Failed to load logs: ' + response.data.message);
@@ -67,7 +68,7 @@ jQuery(document).ready(function($) {
     });
 
     // Clear logs
-    $('#clear-log').on('click', function(e) {
+    $('#clear-logs').on('click', function(e) {
         e.preventDefault();
         
         if (!confirm('Are you sure you want to clear the log file?')) {
@@ -82,12 +83,14 @@ jQuery(document).ready(function($) {
             url: shift8GravitySAP.ajaxurl,
             type: 'POST',
             data: {
-                action: 'shift8_gravitysap_clear_log',
+                action: 'shift8_gravitysap_clear_custom_log',
                 nonce: shift8GravitySAP.nonce
             },
             success: function(response) {
                 if (response.success) {
-                    $('#log-viewer textarea').val('');
+                    $('#log-content').val('');
+                    $('#log-viewer').hide();
+                    $('#log-size').text('0 B');
                     alert('Log file cleared successfully');
                 } else {
                     alert('Failed to clear log: ' + response.data.message);
