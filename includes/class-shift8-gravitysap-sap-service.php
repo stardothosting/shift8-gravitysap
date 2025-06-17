@@ -640,14 +640,50 @@ class Shift8_GravitySAP_SAP_Service {
     }
 
     /**
-     * Test connection using cURL
+     * Generate WordPress HTTP API test code for manual testing
      */
-    public function test_connection_curl() {
-        try {
-            if (!function_exists('curl_init')) {
-                throw new Exception('cURL is not installed on this server');
-            }
+    public static function generate_wp_http_test_code($settings) {
+        $endpoint = rtrim($settings['sap_endpoint'], '/');
+        $login_data = array(
+            'CompanyDB' => $settings['sap_company_db'],
+            'UserName' => $settings['sap_username'],
+            'Password' => $settings['sap_password']
+        );
 
+        $test_code = sprintf(
+            '<?php' . "\n" .
+            '// WordPress HTTP API Test Code' . "\n" .
+            '$url = "%s/Login";' . "\n" .
+            '$args = array(' . "\n" .
+            '    "timeout" => 30,' . "\n" .
+            '    "method" => "POST",' . "\n" .
+            '    "body" => \'%s\',' . "\n" .
+            '    "headers" => array(' . "\n" .
+            '        "Content-Type" => "application/json",' . "\n" .
+            '        "Accept" => "application/json"' . "\n" .
+            '    ),' . "\n" .
+            '    "sslverify" => false' . "\n" .
+            ');' . "\n" .
+            '$response = wp_remote_request($url, $args);' . "\n" .
+            'if (is_wp_error($response)) {' . "\n" .
+            '    echo "Error: " . $response->get_error_message();' . "\n" .
+            '} else {' . "\n" .
+            '    echo "Response Code: " . wp_remote_retrieve_response_code($response) . "\n";' . "\n" .
+            '    echo "Response Body: " . wp_remote_retrieve_body($response) . "\n";' . "\n" .
+            '}' . "\n" .
+            '?>',
+            $endpoint,
+            json_encode($login_data)
+        );
+
+        return $test_code;
+    }
+
+    /**
+     * Test connection using WordPress HTTP API (enhanced debugging)
+     */
+    public function test_connection_http_api() {
+        try {
             $url = $this->endpoint . '/Login';
             
             $login_data = array(
@@ -656,56 +692,39 @@ class Shift8_GravitySAP_SAP_Service {
                 'Password' => $this->password
             );
 
-            $ch = curl_init();
-            if ($ch === false) {
-                throw new Exception('Failed to initialize cURL');
-            }
-
-            curl_setopt_array($ch, array(
-                CURLOPT_URL => $url,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($login_data),
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_CONNECTTIMEOUT => 10,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
-                CURLOPT_HTTPHEADER => array(
-                    'Content-Type: application/json',
-                    'Accept: application/json'
+            $args = array(
+                'timeout' => 30,
+                'method' => 'POST',
+                'body' => json_encode($login_data),
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
                 ),
-                CURLOPT_VERBOSE => true
-            ));
+                'sslverify' => false, // Equivalent to CURLOPT_SSL_VERIFYPEER => false
+                'sslcertificates' => '', // Equivalent to CURLOPT_SSL_VERIFYHOST => false
+            );
 
-            // Create a temporary file handle for CURL debug output
-            $verbose = fopen('php://temp', 'w+');
-            if ($verbose === false) {
-                throw new Exception('Failed to create temporary file for cURL verbose output');
-            }
-            curl_setopt($ch, CURLOPT_STDERR, $verbose);
+            shift8_gravitysap_debug_log('SAP HTTP Request URL: ' . $url);
+            shift8_gravitysap_debug_log('SAP HTTP Request Args: ' . print_r($args, true));
 
-            $response = curl_exec($ch);
-            if ($response === false) {
-                $curl_error = curl_error($ch);
-                $curl_errno = curl_errno($ch);
-                throw new Exception('cURL Error: ' . $curl_error . ' (Error #' . $curl_errno . ')');
+            $response = wp_remote_request($url, $args);
+
+            if (is_wp_error($response)) {
+                $error_message = $response->get_error_message();
+                throw new Exception('WordPress HTTP API Error: ' . $error_message);
             }
 
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            
-            // Get verbose debug information
-            rewind($verbose);
-            $verbose_log = stream_get_contents($verbose);
-            
-            curl_close($ch);
-            fclose($verbose);
+            $http_code = wp_remote_retrieve_response_code($response);
+            $response_body = wp_remote_retrieve_body($response);
+            $response_headers = wp_remote_retrieve_headers($response);
 
-            // Log the request and response
-            shift8_gravitysap_debug_log("SAP cURL Request:\n" . $verbose_log);
-            shift8_gravitysap_debug_log("SAP cURL Response:\n" . $response);
+            // Log the request and response details
+            shift8_gravitysap_debug_log('SAP HTTP Response Code: ' . $http_code);
+            shift8_gravitysap_debug_log('SAP HTTP Response Headers: ' . print_r($response_headers, true));
+            shift8_gravitysap_debug_log('SAP HTTP Response Body: ' . $response_body);
 
             if ($http_code === 200) {
-                $data = json_decode($response, true);
+                $data = json_decode($response_body, true);
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     throw new Exception('Invalid JSON response: ' . json_last_error_msg());
                 }
@@ -713,17 +732,17 @@ class Shift8_GravitySAP_SAP_Service {
                     'success' => true,
                     'message' => 'Successfully connected to SAP Business One Service Layer',
                     'details' => array(
-                        'session_id' => $data['SessionId'],
-                        'version' => $data['Version'],
-                        'session_timeout' => $data['SessionTimeout']
+                        'session_id' => isset($data['SessionId']) ? $data['SessionId'] : null,
+                        'version' => isset($data['Version']) ? $data['Version'] : null,
+                        'session_timeout' => isset($data['SessionTimeout']) ? $data['SessionTimeout'] : null
                     )
                 );
             }
 
-            $error_data = json_decode($response, true);
+            $error_data = json_decode($response_body, true);
             $error_message = isset($error_data['error']['message']['value']) 
                 ? $error_data['error']['message']['value'] 
-                : 'HTTP ' . $http_code . ' - ' . $response;
+                : 'HTTP ' . $http_code . ' - ' . $response_body;
 
             throw new Exception('Connection failed: ' . $error_message);
 
@@ -735,8 +754,7 @@ class Shift8_GravitySAP_SAP_Service {
                 'details' => array(
                     'request_url' => isset($url) ? $url : null,
                     'request_data' => isset($login_data) ? $login_data : null,
-                    'verbose_log' => isset($verbose_log) ? $verbose_log : null,
-                    'response' => isset($response) ? $response : null,
+                    'response' => isset($response_body) ? $response_body : null,
                     'http_code' => isset($http_code) ? $http_code : null
                 )
             );
