@@ -49,6 +49,28 @@ define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_BASENAME', plugin_basename(__FILE__));
 
 /**
+ * Sanitize sensitive data for logging
+ */
+function shift8_gravitysap_sanitize_log_data($data) {
+    if (is_array($data)) {
+        $sanitized = array();
+        foreach ($data as $key => $value) {
+            if (in_array(strtolower($key), array('password', 'sap_password', 'pass', 'pwd'))) {
+                $sanitized[$key] = '***REDACTED***';
+            } elseif (in_array(strtolower($key), array('username', 'sap_username', 'user', 'login'))) {
+                $sanitized[$key] = substr($value, 0, 2) . '***';
+            } elseif (is_array($value)) {
+                $sanitized[$key] = shift8_gravitysap_sanitize_log_data($value);
+            } else {
+                $sanitized[$key] = $value;
+            }
+        }
+        return $sanitized;
+    }
+    return $data;
+}
+
+/**
  * Global debug logging function
  * Checks if debug logging is enabled before logging
  */
@@ -56,13 +78,19 @@ function shift8_gravitysap_debug_log($message, $data = null) {
     // Check if debug logging is enabled
     $settings = get_option('shift8_gravitysap_settings', array());
     
-    // Debug the debug setting itself (always log this)
+    // Debug the debug setting itself (always log this) - but sanitize sensitive data
     if ($message === 'Debug setting check') {
-        error_log('[Shift8 GravitySAP Debug Check] Settings: ' . print_r($settings, true));
+        $sanitized_settings = shift8_gravitysap_sanitize_log_data($settings);
+        error_log('[Shift8 GravitySAP Debug Check] Settings: ' . print_r($sanitized_settings, true));
     }
     
     if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
         return;
+    }
+    
+    // Sanitize sensitive data from logs
+    if ($data !== null) {
+        $data = shift8_gravitysap_sanitize_log_data($data);
     }
 
     // Format the log message

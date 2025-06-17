@@ -10,12 +10,6 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Import WordPress functions
-use function wp_remote_request;
-use function wp_remote_retrieve_body;
-use function wp_remote_retrieve_response_code;
-use function is_wp_error;
-
 /**
  * SAP Service Layer integration class
  */
@@ -74,9 +68,21 @@ class Shift8_GravitySAP_SAP_Service {
             throw new Exception('CardType is required for Business Partner creation');
         }
 
-        // Generate unique CardCode if not provided
-        if (empty($business_partner_data['CardCode'])) {
-            $business_partner_data['CardCode'] = $this->generate_card_code($business_partner_data['CardName']);
+        // Try to get available numbering series first
+        $available_series = $this->get_available_numbering_series();
+        if (!empty($available_series)) {
+            // Use the first available series
+            $business_partner_data['Series'] = $available_series[0];
+            shift8_gravitysap_debug_log('Using numbering series: ' . $available_series[0]);
+        } else {
+            // Fallback: Generate a short CardCode that fits SAP B1 limits (max 15 characters)
+            if (empty($business_partner_data['CardCode'])) {
+                // Use last 6 digits of timestamp + 4 random characters = 12 chars total
+                $timestamp_short = substr(time(), -6);
+                $random = substr(str_shuffle('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'), 0, 4);
+                $business_partner_data['CardCode'] = 'BP' . $timestamp_short . $random;
+                shift8_gravitysap_debug_log('No numbering series found, using manual CardCode: ' . $business_partner_data['CardCode']);
+            }
         }
 
         $response = $this->make_request('POST', '/BusinessPartners', $business_partner_data);
@@ -182,6 +188,51 @@ class Shift8_GravitySAP_SAP_Service {
     }
 
     /**
+     * Get available numbering series for Business Partners
+     */
+    private function get_available_numbering_series() {
+        try {
+            // Ensure we have a valid session
+            if (!$this->ensure_authenticated()) {
+                return array();
+            }
+
+            // Query the SeriesService to get available series for Business Partners
+            $response = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
+            
+            if (is_wp_error($response)) {
+                shift8_gravitysap_debug_log('Failed to get numbering series: ' . $response->get_error_message());
+                return array();
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            if ($response_code !== 200) {
+                shift8_gravitysap_debug_log('Failed to get numbering series, HTTP code: ' . $response_code);
+                return array();
+            }
+
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            
+            $series = array();
+            if (!empty($data['value'])) {
+                foreach ($data['value'] as $serie) {
+                    if (!empty($serie['Series'])) {
+                        $series[] = $serie['Series'];
+                    }
+                }
+            }
+            
+            shift8_gravitysap_debug_log('Found numbering series: ' . implode(', ', $series));
+            return $series;
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Exception getting numbering series: ' . $e->getMessage());
+            return array();
+        }
+    }
+
+    /**
      * Generate a unique CardCode based on CardName
      */
     private function generate_card_code($card_name) {
@@ -216,27 +267,35 @@ class Shift8_GravitySAP_SAP_Service {
     }
 
     /**
+     * Decrypt password using the same method as admin class
+     */
+    private function decrypt_password($encrypted_password) {
+        if (empty($encrypted_password)) {
+            return '';
+        }
+        
+        // Get encryption key from WordPress
+        $key = wp_salt('auth');
+        
+        // Decrypt the password
+        $decrypted = openssl_decrypt(
+            $encrypted_password,
+            'AES-256-CBC',
+            $key,
+            0,
+            substr($key, 0, 16)
+        );
+        
+        return $decrypted;
+    }
+
+    /**
      * Authenticate with SAP Service Layer
      */
     private function authenticate() {
-        // Use the password as-is (should be plaintext for SAP API)
-        // The password might be base64 encoded for storage, but SAP expects plaintext
-        $password_to_use = $this->password;
-        
-        // If the password looks like base64, try to decode it
-        if (base64_encode(base64_decode($this->password, true)) === $this->password) {
-            $decoded = base64_decode($this->password, true);
-            if ($decoded !== false) {
-                // Ensure the decoded password is valid UTF-8
-                if (mb_check_encoding($decoded, 'UTF-8')) {
-                    $password_to_use = $decoded;
-                    shift8_gravitysap_debug_log('Using decoded password for SAP authentication');
-                } else {
-                    // If decoded password is not valid UTF-8, use original (it might already be plaintext)
-                    shift8_gravitysap_debug_log('Decoded password is not valid UTF-8, using original password');
-                }
-            }
-        }
+        // Decrypt the password using the same method as the working test connection
+        $password_to_use = $this->decrypt_password($this->password);
+        shift8_gravitysap_debug_log('Using decrypted password (same as working ajax_test_connection method)');
 
         // Ensure all values are valid UTF-8 for JSON encoding
         $company_db_clean = mb_convert_encoding($this->company_db, 'UTF-8', 'UTF-8');
@@ -250,12 +309,12 @@ class Shift8_GravitySAP_SAP_Service {
             'Password' => $password_clean
         );
 
-        // Debug the login data before JSON encoding
+        // Debug the login data before JSON encoding (sanitized)
         shift8_gravitysap_debug_log(
-            sprintf('SAP Login Data Debug:\nCompanyDB: "%s" (type: %s)\nUserName: "%s" (type: %s)\nPassword: "%s" (type: %s)\nPassword length: %d',
+            sprintf('SAP Login Data Debug:\nCompanyDB: "%s" (type: %s)\nUserName: "%s" (type: %s)\nPassword: "***REDACTED***" (type: %s)\nPassword length: %d',
                 $this->company_db, gettype($this->company_db),
-                $this->username, gettype($this->username),
-                substr($password_to_use, 0, 3) . '***', gettype($password_to_use),
+                substr($this->username, 0, 2) . '***', gettype($this->username),
+                gettype($password_to_use),
                 strlen($password_to_use)
             )
         );
