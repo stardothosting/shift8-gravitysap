@@ -425,6 +425,93 @@ class Shift8_GravitySAP {
             </p>
         </form>
         
+        <?php if (!empty(rgar($settings, 'enabled')) && !empty(rgar($settings, 'field_mapping'))): ?>
+        <hr style="margin: 30px 0;" />
+        
+        <form method="post" id="test-sap-form">
+            <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
+            <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
+            <input type="hidden" name="subview" value="sap_integration" />
+            
+            <h3><?php esc_html_e('Test SAP Integration', 'shift8-gravitysap'); ?></h3>
+            <p><?php esc_html_e('Send test data to SAP Business One to validate your field mapping configuration.', 'shift8-gravitysap'); ?></p>
+            
+            <table class="form-table">
+                <tr>
+                    <th scope="row">
+                        <label><?php esc_html_e('Test Data', 'shift8-gravitysap'); ?></label>
+                    </th>
+                    <td>
+                        <table class="widefat field-mapping-table">
+                            <thead>
+                                <tr>
+                                    <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
+                                    <th><?php esc_html_e('Mapped Form Field', 'shift8-gravitysap'); ?></th>
+                                    <th><?php esc_html_e('Test Value', 'shift8-gravitysap'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $field_mapping = rgar($settings, 'field_mapping', array());
+                                $sap_fields = array(
+                                    'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
+                                    'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
+                                    'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
+                                    'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
+                                    'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
+                                    'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
+                                    'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+                                );
+                                
+                                // Default test values based on field type
+                                $default_test_values = array(
+                                    'CardName' => 'Test Customer ' . date('Y-m-d H:i:s'),
+                                    'EmailAddress' => 'test@example.com',
+                                    'Phone1' => '+1-555-123-4567',
+                                    'BPAddresses.Street' => '123 Test Street',
+                                    'BPAddresses.City' => 'Test City',
+                                    'BPAddresses.State' => 'Test State',
+                                    'BPAddresses.ZipCode' => '12345',
+                                );
+                                
+                                foreach ($sap_fields as $sap_field => $label) {
+                                    $mapped_field_id = rgar($field_mapping, $sap_field);
+                                    if (!empty($mapped_field_id)) {
+                                        $mapped_field = GFFormsModel::get_field($form, $mapped_field_id);
+                                        $field_label = $mapped_field ? GFCommon::get_label($mapped_field) : 'Field ID: ' . $mapped_field_id;
+                                        ?>
+                                        <tr>
+                                            <td><?php echo esc_html($label); ?></td>
+                                            <td><?php echo esc_html($field_label); ?></td>
+                                            <td>
+                                                <input type="text" 
+                                                       name="test_values[<?php echo esc_attr($sap_field); ?>]" 
+                                                       value="<?php echo esc_attr(rgar($default_test_values, $sap_field)); ?>" 
+                                                       class="regular-text" />
+                                            </td>
+                                        </tr>
+                                        <?php
+                                    }
+                                }
+                                ?>
+                            </tbody>
+                        </table>
+                        <p class="description">
+                            <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravitysap'); ?>
+                        </p>
+                    </td>
+                </tr>
+            </table>
+            
+            <p class="submit">
+                <input type="submit" name="test-sap-integration" value="<?php esc_attr_e('Test Integration', 'shift8-gravitysap'); ?>" class="button-secondary" />
+                <span class="description" style="margin-left: 10px;">
+                    <?php esc_html_e('This will create a test Business Partner in SAP Business One.', 'shift8-gravitysap'); ?>
+                </span>
+            </p>
+        </form>
+        <?php endif; ?>
+        
         <?php
         GFFormSettings::page_footer();
     }
@@ -550,6 +637,104 @@ class Shift8_GravitySAP {
             }
         }
 
+        return $business_partner;
+    }
+
+    /**
+     * Test SAP Integration with custom test values
+     */
+    public function test_sap_integration($form) {
+        shift8_gravitysap_debug_log('=== TESTING SAP INTEGRATION ===');
+        
+        try {
+            // Get plugin settings
+            $plugin_settings = get_option('shift8_gravitysap_settings', array());
+            
+            if (empty($plugin_settings['sap_endpoint']) || empty($plugin_settings['sap_username']) || empty($plugin_settings['sap_password'])) {
+                return array(
+                    'success' => false,
+                    'message' => 'SAP connection settings are incomplete. Please configure SAP settings first.'
+                );
+            }
+            
+            // Get form settings and test values
+            $settings = rgar($form, 'sap_integration_settings', array());
+            $test_values = rgpost('test_values', array());
+            
+            if (empty($test_values)) {
+                return array(
+                    'success' => false,
+                    'message' => 'No test values provided.'
+                );
+            }
+            
+            shift8_gravitysap_debug_log('Test values received', $test_values);
+            
+            // Create business partner data from test values
+            $business_partner_data = $this->map_test_values_to_business_partner($settings, $test_values);
+            
+            shift8_gravitysap_debug_log('Business partner data prepared', $business_partner_data);
+            
+            // Initialize SAP service
+            require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
+            $sap_service = new Shift8_GravitySAP_SAP_Service($plugin_settings);
+            
+            // Create Business Partner in SAP
+            $result = $sap_service->create_business_partner($business_partner_data);
+            
+            if ($result && isset($result['CardCode'])) {
+                shift8_gravitysap_debug_log('Test successful', $result);
+                return array(
+                    'success' => true,
+                    'message' => 'Card Code: ' . $result['CardCode']
+                );
+            } else {
+                return array(
+                    'success' => false,
+                    'message' => 'SAP service did not return a valid result'
+                );
+            }
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Test failed with exception', array(
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ));
+            
+            return array(
+                'success' => false,
+                'message' => $e->getMessage()
+            );
+        }
+    }
+    
+    /**
+     * Map test values to Business Partner structure
+     */
+    private function map_test_values_to_business_partner($settings, $test_values) {
+        $card_type = rgar($settings, 'card_type', 'cCustomer');
+        
+        $business_partner = array('CardType' => $card_type);
+        
+        foreach ($test_values as $sap_field => $test_value) {
+            if (empty($test_value)) {
+                continue;
+            }
+            
+            // Handle address fields specially
+            if (strpos($sap_field, 'BPAddresses.') === 0) {
+                $address_field = str_replace('BPAddresses.', '', $sap_field);
+                
+                if (!isset($business_partner['BPAddresses'])) {
+                    $business_partner['BPAddresses'] = array(array('AddressType' => 'bo_BillTo'));
+                }
+                
+                $business_partner['BPAddresses'][0][$address_field] = $test_value;
+            } else {
+                $business_partner[$sap_field] = $test_value;
+            }
+        }
+        
         return $business_partner;
     }
 
