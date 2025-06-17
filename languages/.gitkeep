@@ -1,0 +1,2 @@
+# This file ensures the languages directory is included in the plugin package
+# Translation files (.po/.mo) will be placed here 

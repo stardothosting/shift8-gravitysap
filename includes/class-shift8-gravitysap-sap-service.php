@@ -167,7 +167,7 @@ class Shift8_GravitySAP_SAP_Service {
         $response = $this->make_request('POST', '/BusinessPartners', $minimal_data);
 
         if (is_wp_error($response)) {
-            throw new Exception('Failed to create Business Partner: ' . $response->get_error_message());
+            throw new Exception('Failed to create Business Partner: ' . esc_html($response->get_error_message()));
         }
 
         $response_code = wp_remote_retrieve_response_code($response);

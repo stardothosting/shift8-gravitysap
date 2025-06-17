@@ -258,8 +258,8 @@ class Shift8_GravitySAP_Admin {
         // Prepare settings array
         $settings = array(
             'sap_endpoint' => isset($_POST['sap_endpoint']) ? esc_url_raw(trim(sanitize_text_field(wp_unslash($_POST['sap_endpoint'])))) : '',
-            'sap_company_db' => isset($_POST['sap_company_db']) ? sanitize_text_field(trim(wp_unslash($_POST['sap_company_db']))) : '',
-            'sap_username' => isset($_POST['sap_username']) ? sanitize_user(trim(wp_unslash($_POST['sap_username']))) : '',
+            'sap_company_db' => isset($_POST['sap_company_db']) ? sanitize_text_field(trim(sanitize_text_field(wp_unslash($_POST['sap_company_db'])))) : '',
+            'sap_username' => isset($_POST['sap_username']) ? sanitize_user(trim(sanitize_text_field(wp_unslash($_POST['sap_username'])))) : '',
             'sap_debug' => isset($_POST['sap_debug']) ? '1' : '0'
         );
         
