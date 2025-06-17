@@ -51,14 +51,69 @@ class Shift8_GravitySAP_SAP_Service {
     }
 
     /**
+     * Test reading existing Business Partners to verify API connectivity
+     */
+    public function test_read_business_partners() {
+        try {
+            // Ensure we have a valid session
+            if (!$this->ensure_authenticated()) {
+                throw new Exception('Failed to authenticate with SAP');
+            }
+            
+            // Try to read Business Partners with simpler query first
+            $response = $this->make_request('GET', '/BusinessPartners');
+            
+            if (is_wp_error($response)) {
+                throw new Exception('Failed to read Business Partners: ' . $response->get_error_message());
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            if ($response_code === 200) {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                
+                shift8_gravitysap_debug_log('Successfully read Business Partners', array(
+                    'count' => count($data['value'] ?? []),
+                    'first_bp' => $data['value'][0] ?? 'none'
+                ));
+                
+                return array(
+                    'success' => true,
+                    'message' => 'Successfully read ' . count($data['value'] ?? []) . ' Business Partners',
+                    'data' => $data['value'] ?? []
+                );
+            } else {
+                // Log the full error response for debugging
+                $body = wp_remote_retrieve_body($response);
+                shift8_gravitysap_debug_log('Business Partner read failed', array(
+                    'status' => $response_code,
+                    'body' => $body
+                ));
+                throw new Exception('Read failed with HTTP ' . $response_code . ' - ' . $body);
+            }
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Read Business Partners failed: ' . $e->getMessage());
+            return array(
+                'success' => false,
+                'message' => $e->getMessage()
+            );
+        }
+    }
+
+    /**
      * Create Business Partner in SAP
      */
     public function create_business_partner($business_partner_data) {
-        // First, let's check what numbering series are actually available
+        // First, test if we can read existing Business Partners
         shift8_gravitysap_debug_log('=== STARTING BUSINESS PARTNER CREATION ===');
         
-        // Check available series and log the response
-        $this->debug_numbering_series();
+        $read_test = $this->test_read_business_partners();
+        if (!$read_test['success']) {
+            throw new Exception('Cannot read Business Partners - API issue: ' . $read_test['message']);
+        }
+        
+        shift8_gravitysap_debug_log('✅ Business Partner read test passed - API is working');
         
         // Ensure we have a valid session
         if (!$this->ensure_authenticated()) {
@@ -74,24 +129,32 @@ class Shift8_GravitySAP_SAP_Service {
             throw new Exception('CardType is required for Business Partner creation');
         }
 
-        // Try a different approach: Create as Lead type (cLid) instead of Customer
-        // Leads might not require numbering series
-        $business_partner_data['CardType'] = 'cLid';
-        shift8_gravitysap_debug_log('Changed CardType to cLid (Lead) to avoid numbering series issues');
+        // Check available numbering series before attempting creation
+        $available_series = $this->get_available_numbering_series();
+        shift8_gravitysap_debug_log('Available numbering series', array('series' => $available_series));
         
-        // Generate a very simple CardCode
-        if (empty($business_partner_data['CardCode'])) {
-            $simple_code = 'L' . time();  // L + timestamp
-            $business_partner_data['CardCode'] = $simple_code;
-            shift8_gravitysap_debug_log('Generated Lead CardCode: ' . $simple_code);
+        // Use the simplest possible approach - Customer type with minimal data
+        $business_partner_data['CardType'] = 'cCustomer';
+        
+        // Try without any Series or CardCode - completely minimal
+        unset($business_partner_data['Series']);
+        unset($business_partner_data['CardCode']);
+        
+        // Keep only essential fields
+        $minimal_data = array(
+            'CardType' => 'cCustomer',
+            'CardName' => $business_partner_data['CardName']
+        );
+        
+        // If we have available series, try using the first one
+        if (!empty($available_series)) {
+            $minimal_data['Series'] = $available_series[0];
+            shift8_gravitysap_debug_log('Using numbering series', array('series' => $available_series[0]));
         }
         
-        // Ensure no Series field
-        unset($business_partner_data['Series']);
-        
-        shift8_gravitysap_debug_log('Final Lead Data before sending to SAP', $business_partner_data);
+        shift8_gravitysap_debug_log('Trying Business Partner creation', $minimal_data);
 
-        $response = $this->make_request('POST', '/BusinessPartners', $business_partner_data);
+        $response = $this->make_request('POST', '/BusinessPartners', $minimal_data);
 
         if (is_wp_error($response)) {
             throw new Exception('Failed to create Business Partner: ' . $response->get_error_message());
@@ -118,9 +181,34 @@ class Shift8_GravitySAP_SAP_Service {
             $body = wp_remote_retrieve_body($response);
             $error_data = json_decode($body, true);
             
+            shift8_gravitysap_debug_log('Business Partner creation failed', array(
+                'status_code' => $response_code,
+                'response_body' => $body,
+                'available_series' => $available_series
+            ));
+            
             $error_message = 'Unknown error';
             if (!empty($error_data['error']['message']['value'])) {
                 $error_message = $error_data['error']['message']['value'];
+            }
+            
+            // Provide enhanced context for numbering series error
+            if (strpos($error_message, 'numbering series') !== false) {
+                $help_message = "\n\nSAP CONFIGURATION REQUIRED:\n";
+                $help_message .= "1. Log into SAP Business One as Administrator\n";
+                $help_message .= "2. Go to Administration > System Initialization > Document Numbering\n";
+                $help_message .= "3. Find 'Business Partners' in the list\n";
+                $help_message .= "4. Create a new numbering series (e.g., BP######## where # represents numbers)\n";
+                $help_message .= "5. Set the series as Primary or Default\n";
+                $help_message .= "6. Save the configuration\n\n";
+                
+                if (empty($available_series)) {
+                    $help_message .= "STATUS: No numbering series found for Business Partners.\n";
+                } else {
+                    $help_message .= "STATUS: Found series (" . implode(', ', $available_series) . ") but creation still failed.\n";
+                }
+                
+                $error_message .= $help_message;
             }
             
             throw new Exception('SAP Business Partner creation failed: ' . $error_message);
@@ -237,33 +325,55 @@ class Shift8_GravitySAP_SAP_Service {
                 return array();
             }
 
-            // Query the SeriesService to get available series for Business Partners
-            $response = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
-            
-            if (is_wp_error($response)) {
-                shift8_gravitysap_debug_log('Failed to get numbering series: ' . $response->get_error_message());
-                return array();
-            }
-
-            $response_code = wp_remote_retrieve_response_code($response);
-            if ($response_code !== 200) {
-                shift8_gravitysap_debug_log('Failed to get numbering series, HTTP code: ' . $response_code);
-                return array();
-            }
-
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            
+            // Try multiple approaches to get Business Partner series
             $series = array();
-            if (!empty($data['value'])) {
-                foreach ($data['value'] as $serie) {
-                    if (!empty($serie['Series'])) {
-                        $series[] = $serie['Series'];
+            
+            // Method 1: Try ObjectCode '2' (Business Partners)
+            $response1 = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
+            shift8_gravitysap_debug_log('Method 1 - ObjectCode 2 response', array(
+                'is_error' => is_wp_error($response1),
+                'status' => is_wp_error($response1) ? null : wp_remote_retrieve_response_code($response1),
+                'body' => is_wp_error($response1) ? $response1->get_error_message() : wp_remote_retrieve_body($response1)
+            ));
+            
+            // Method 2: Try without filter to see all available series
+            $response2 = $this->make_request('GET', "/SeriesService_GetDocumentSeries");
+            if (!is_wp_error($response2) && wp_remote_retrieve_response_code($response2) === 200) {
+                $body2 = wp_remote_retrieve_body($response2);
+                $data2 = json_decode($body2, true);
+                shift8_gravitysap_debug_log('Method 2 - All series response', array(
+                    'series_count' => count($data2['value'] ?? []),
+                    'first_few' => array_slice($data2['value'] ?? [], 0, 5)
+                ));
+                
+                // Look for Business Partner related series
+                if (!empty($data2['value'])) {
+                    foreach ($data2['value'] as $serie) {
+                        shift8_gravitysap_debug_log('Series found', array(
+                            'Series' => $serie['Series'] ?? 'N/A',
+                            'ObjectCode' => $serie['ObjectCode'] ?? 'N/A',
+                            'SeriesName' => $serie['SeriesName'] ?? 'N/A',
+                            'Document' => $serie['Document'] ?? 'N/A'
+                        ));
+                        
+                        // Check if this series is for Business Partners
+                        if (!empty($serie['ObjectCode']) && $serie['ObjectCode'] == '2') {
+                            if (!empty($serie['Series'])) {
+                                $series[] = $serie['Series'];
+                            }
+                        }
                     }
                 }
             }
             
-            shift8_gravitysap_debug_log('Found numbering series: ' . implode(', ', $series));
+            // Method 3: Try direct Business Partners endpoint to see what it expects
+            $response3 = $this->make_request('GET', "/BusinessPartners?\$top=1");
+            shift8_gravitysap_debug_log('Method 3 - Direct BP query', array(
+                'is_error' => is_wp_error($response3),
+                'status' => is_wp_error($response3) ? null : wp_remote_retrieve_response_code($response3)
+            ));
+            
+            shift8_gravitysap_debug_log('Final series found: ' . implode(', ', $series));
             return $series;
             
         } catch (Exception $e) {
@@ -302,6 +412,50 @@ class Shift8_GravitySAP_SAP_Service {
             return array(
                 'success' => false,
                 'message' => $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Test Business Partner numbering series configuration
+     */
+    public function test_numbering_series() {
+        try {
+            // Ensure we have a valid session
+            if (!$this->ensure_authenticated()) {
+                throw new Exception('Failed to authenticate with SAP');
+            }
+
+            $available_series = $this->get_available_numbering_series();
+            
+            $result = array(
+                'success' => !empty($available_series),
+                'series_count' => count($available_series),
+                'available_series' => $available_series
+            );
+            
+            if (empty($available_series)) {
+                $result['message'] = 'No numbering series configured for Business Partners. Please configure in SAP B1 Administration > System Initialization > Document Numbering.';
+                $result['recommendations'] = array(
+                    'Contact your SAP Administrator to configure Business Partner numbering series',
+                    'In SAP B1: Administration > System Initialization > Document Numbering',
+                    'Find "Business Partners" and create a new series (e.g., BP########)',
+                    'Set the series as Primary or Default and save'
+                );
+            } else {
+                $result['message'] = 'Found ' . count($available_series) . ' numbering series for Business Partners: ' . implode(', ', $available_series);
+            }
+            
+            shift8_gravitysap_debug_log('Numbering series test result', $result);
+            return $result;
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Numbering series test failed: ' . $e->getMessage());
+            return array(
+                'success' => false,
+                'message' => 'Failed to check numbering series: ' . $e->getMessage(),
+                'series_count' => 0,
+                'available_series' => array()
             );
         }
     }

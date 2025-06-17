@@ -359,6 +359,18 @@ class Shift8_GravitySAP {
             }
         }
         
+        // Check if this is a numbering series test request
+        if (rgpost('test-numbering-series')) {
+            shift8_gravitysap_debug_log('=== NUMBERING SERIES TEST REQUEST ===');
+            $test_result = $this->test_numbering_series();
+            
+            if ($test_result['success']) {
+                GFCommon::add_message('Numbering series check successful: ' . $test_result['message']);
+            } else {
+                GFCommon::add_error_message('Numbering series check failed: ' . $test_result['message']);
+            }
+        }
+        
         // Get current settings (either fresh from DB after save, or existing)
         $settings = rgar($form, 'sap_integration_settings', array());
         
@@ -460,9 +472,28 @@ class Shift8_GravitySAP {
             </p>
         </form>
         
-        <?php if (!empty(rgar($settings, 'enabled')) && !empty(rgar($settings, 'field_mapping'))): ?>
+        <?php if (!empty(rgar($settings, 'enabled'))): ?>
         <hr style="margin: 30px 0;" />
         
+        <!-- Numbering Series Test -->
+        <form method="post" id="test-numbering-series-form" style="margin-bottom: 20px;">
+            <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
+            <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
+            <input type="hidden" name="subview" value="sap_integration" />
+            
+            <h3><?php esc_html_e('Test SAP Numbering Series', 'shift8-gravitysap'); ?></h3>
+            <p><?php esc_html_e('Check if SAP Business One has the required numbering series configured for Business Partners.', 'shift8-gravitysap'); ?></p>
+            
+            <p class="submit">
+                <input type="submit" name="test-numbering-series" value="<?php esc_attr_e('Test Numbering Series', 'shift8-gravitysap'); ?>" class="button-secondary" />
+                <span class="description" style="margin-left: 10px;">
+                    <?php esc_html_e('This will check if SAP B1 has the required numbering series configuration.', 'shift8-gravitysap'); ?>
+                </span>
+            </p>
+        </form>
+        
+        <?php if (!empty(rgar($settings, 'field_mapping'))): ?>
+        <!-- Business Partner Creation Test -->
         <form method="post" id="test-sap-form">
             <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
             <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
@@ -545,6 +576,7 @@ class Shift8_GravitySAP {
                 </span>
             </p>
         </form>
+        <?php endif; ?>
         <?php endif; ?>
         
         <?php
@@ -771,6 +803,46 @@ class Shift8_GravitySAP {
         }
         
         return $business_partner;
+    }
+
+    /**
+     * Test SAP numbering series configuration
+     */
+    public function test_numbering_series() {
+        shift8_gravitysap_debug_log('=== TESTING SAP NUMBERING SERIES ===');
+        
+        try {
+            // Get plugin settings
+            $plugin_settings = get_option('shift8_gravitysap_settings', array());
+            
+            if (empty($plugin_settings['sap_endpoint']) || empty($plugin_settings['sap_username']) || empty($plugin_settings['sap_password'])) {
+                return array(
+                    'success' => false,
+                    'message' => 'SAP connection settings are incomplete. Please configure SAP settings first.'
+                );
+            }
+            
+            // Initialize SAP service
+            require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
+            $sap_service = new Shift8_GravitySAP_SAP_Service($plugin_settings);
+            
+            // Test numbering series
+            $result = $sap_service->test_numbering_series();
+            
+            shift8_gravitysap_debug_log('Numbering series test complete', $result);
+            return $result;
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Numbering series test failed with exception', array(
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ));
+            
+            return array(
+                'success' => false,
+                'message' => $e->getMessage()
+            );
+        }
     }
 
     /**
