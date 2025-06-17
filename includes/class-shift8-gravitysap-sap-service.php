@@ -325,56 +325,47 @@ class Shift8_GravitySAP_SAP_Service {
                 return array();
             }
 
-            // Try multiple approaches to get Business Partner series
             $series = array();
             
-            // Method 1: Try ObjectCode '2' (Business Partners)
-            $response1 = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
-            shift8_gravitysap_debug_log('Method 1 - ObjectCode 2 response', array(
-                'is_error' => is_wp_error($response1),
-                'status' => is_wp_error($response1) ? null : wp_remote_retrieve_response_code($response1),
-                'body' => is_wp_error($response1) ? $response1->get_error_message() : wp_remote_retrieve_body($response1)
-            ));
+            // Method 1: Extract series from existing Business Partners (most reliable)
+            $response = $this->make_request('GET', "/BusinessPartners?\$select=Series&\$top=10");
             
-            // Method 2: Try without filter to see all available series
-            $response2 = $this->make_request('GET', "/SeriesService_GetDocumentSeries");
-            if (!is_wp_error($response2) && wp_remote_retrieve_response_code($response2) === 200) {
-                $body2 = wp_remote_retrieve_body($response2);
-                $data2 = json_decode($body2, true);
-                shift8_gravitysap_debug_log('Method 2 - All series response', array(
-                    'series_count' => count($data2['value'] ?? []),
-                    'first_few' => array_slice($data2['value'] ?? [], 0, 5)
+            if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                
+                shift8_gravitysap_debug_log('Method 1 - Extract series from existing BPs', array(
+                    'bp_count' => count($data['value'] ?? []),
+                    'response_sample' => array_slice($data['value'] ?? [], 0, 3)
                 ));
                 
-                // Look for Business Partner related series
-                if (!empty($data2['value'])) {
-                    foreach ($data2['value'] as $serie) {
-                        shift8_gravitysap_debug_log('Series found', array(
-                            'Series' => $serie['Series'] ?? 'N/A',
-                            'ObjectCode' => $serie['ObjectCode'] ?? 'N/A',
-                            'SeriesName' => $serie['SeriesName'] ?? 'N/A',
-                            'Document' => $serie['Document'] ?? 'N/A'
-                        ));
-                        
-                        // Check if this series is for Business Partners
-                        if (!empty($serie['ObjectCode']) && $serie['ObjectCode'] == '2') {
-                            if (!empty($serie['Series'])) {
-                                $series[] = $serie['Series'];
-                            }
+                if (!empty($data['value'])) {
+                    foreach ($data['value'] as $bp) {
+                        if (!empty($bp['Series']) && !in_array($bp['Series'], $series)) {
+                            $series[] = $bp['Series'];
+                            shift8_gravitysap_debug_log('Found series from BP', array('series' => $bp['Series']));
                         }
                     }
                 }
             }
             
-            // Method 3: Try direct Business Partners endpoint to see what it expects
-            $response3 = $this->make_request('GET', "/BusinessPartners?\$top=1");
-            shift8_gravitysap_debug_log('Method 3 - Direct BP query', array(
-                'is_error' => is_wp_error($response3),
-                'status' => is_wp_error($response3) ? null : wp_remote_retrieve_response_code($response3)
+            // Method 2: Try SeriesService (for comparison, but we know it fails)
+            $series_response = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
+            shift8_gravitysap_debug_log('Method 2 - SeriesService response', array(
+                'is_error' => is_wp_error($series_response),
+                'status' => is_wp_error($series_response) ? null : wp_remote_retrieve_response_code($series_response),
+                'note' => 'This API endpoint appears to not work for Business Partners'
             ));
             
-            shift8_gravitysap_debug_log('Final series found: ' . implode(', ', $series));
-            return $series;
+            // If we found series from existing BPs, use those
+            if (!empty($series)) {
+                shift8_gravitysap_debug_log('Successfully found series from existing Business Partners: ' . implode(', ', $series));
+                return $series;
+            }
+            
+            // Method 3: If no existing BPs, try some common series numbers
+            shift8_gravitysap_debug_log('No existing BPs found, will try creation without specifying series');
+            return array(); // Let SAP auto-assign
             
         } catch (Exception $e) {
             shift8_gravitysap_debug_log('Exception getting numbering series: ' . $e->getMessage());
