@@ -581,10 +581,10 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     }
 
     /**
-     * Override form_settings_fields to ensure form settings work
+     * Form settings fields for SAP Integration tab
      */
     public function form_settings_fields($form) {
-        shift8_gravitysap_debug_log('form_settings_fields called', array(
+        shift8_gravitysap_debug_log('form_settings_fields called - ADDON FRAMEWORK', array(
             'form_id' => $form['id'],
             'POST' => $_POST,
             'GET' => $_GET
@@ -602,34 +602,44 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
                         'choices' => array(
                             array(
                                 'label' => esc_html__('Send form submissions to SAP Business One', 'shift8-gravitysap'),
+                                'name'  => 'sap_enabled',
                                 'value' => '1'
                             )
                         )
                     ),
                     array(
-                        'name'    => 'sap_entity_type',
-                        'label'   => esc_html__('SAP Entity Type', 'shift8-gravitysap'),
+                        'name'    => 'sap_feed_name',
+                        'label'   => esc_html__('Feed Name', 'shift8-gravitysap'),
+                        'type'    => 'text',
+                        'class'   => 'medium',
+                        'tooltip' => esc_html__('Enter a name to identify this SAP integration', 'shift8-gravitysap')
+                    ),
+                    array(
+                        'name'    => 'sap_card_type',
+                        'label'   => esc_html__('Business Partner Type', 'shift8-gravitysap'),
                         'type'    => 'select',
+                        'tooltip' => esc_html__('Select the type of business partner to create in SAP', 'shift8-gravitysap'),
                         'choices' => array(
                             array(
                                 'label' => esc_html__('Customer', 'shift8-gravitysap'),
-                                'value' => 'customer'
+                                'value' => 'cCustomer'
                             ),
                             array(
                                 'label' => esc_html__('Vendor', 'shift8-gravitysap'),
-                                'value' => 'vendor'
+                                'value' => 'cSupplier'
                             ),
                             array(
                                 'label' => esc_html__('Lead', 'shift8-gravitysap'),
-                                'value' => 'lead'
+                                'value' => 'cLid'
                             )
                         )
                     ),
                     array(
-                        'name'    => 'field_mappings',
-                        'label'   => esc_html__('Field Mappings', 'shift8-gravitysap'),
-                        'type'    => 'field_mappings',
-                        'tooltip' => esc_html__('Map your form fields to SAP fields', 'shift8-gravitysap')
+                        'name'    => 'sap_field_mapping',
+                        'label'   => esc_html__('Field Mapping', 'shift8-gravitysap'),
+                        'type'    => 'field_map',
+                        'field_map' => $this->get_field_map_choices($form),
+                        'tooltip' => esc_html__('Map your form fields to SAP Business Partner fields', 'shift8-gravitysap')
                     )
                 )
             )
@@ -637,44 +647,40 @@ class GF_Shift8_GravitySAP_AddOn extends GFAddOn {
     }
 
     /**
-     * Custom field for field mappings
+     * Get field mapping choices for SAP Business Partner fields
      */
-    public function settings_field_mappings($field, $echo = true) {
-        shift8_gravitysap_debug_log('settings_field_mappings called', array(
-            'field' => $field,
-            'current_form_id' => $this->get_current_form_id(),
-            'POST' => $_POST
-        ));
-        
-        $form_id = $this->get_current_form_id();
-        $form = GFAPI::get_form($form_id);
-        $mappings = $this->get_form_setting('field_mappings') ?: array();
-        
-        $html = '<div class="field-mappings">';
-        $html .= '<table class="widefat">';
-        $html .= '<thead><tr>';
-        $html .= '<th>' . esc_html__('Form Field', 'shift8-gravitysap') . '</th>';
-        $html .= '<th>' . esc_html__('SAP Field', 'shift8-gravitysap') . '</th>';
-        $html .= '</tr></thead>';
-        $html .= '<tbody>';
-        
-        foreach ($form['fields'] as $form_field) {
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html($form_field->label) . '</td>';
-            $html .= '<td>';
-            $html .= '<input type="text" name="field_mappings[' . esc_attr($form_field->id) . ']" ';
-            $html .= 'value="' . esc_attr($mappings[$form_field->id] ?? '') . '" class="medium" />';
-            $html .= '</td>';
-            $html .= '</tr>';
-        }
-        
-        $html .= '</tbody></table>';
-        $html .= '</div>';
-        
-        if ($echo) {
-            echo $html;
-        }
-        return $html;
+    protected function get_field_map_choices($form) {
+        return array(
+            array(
+                'name'     => 'CardName',
+                'label'    => esc_html__('Business Partner Name', 'shift8-gravitysap'),
+                'required' => true
+            ),
+            array(
+                'name'  => 'EmailAddress',
+                'label' => esc_html__('Email Address', 'shift8-gravitysap')
+            ),
+            array(
+                'name'  => 'Phone1',
+                'label' => esc_html__('Phone Number', 'shift8-gravitysap')
+            ),
+            array(
+                'name'  => 'BPAddresses_Street',
+                'label' => esc_html__('Street Address', 'shift8-gravitysap')
+            ),
+            array(
+                'name'  => 'BPAddresses_City',
+                'label' => esc_html__('City', 'shift8-gravitysap')
+            ),
+            array(
+                'name'  => 'BPAddresses_State',
+                'label' => esc_html__('State/Province', 'shift8-gravitysap')
+            ),
+            array(
+                'name'  => 'BPAddresses_ZipCode',
+                'label' => esc_html__('Zip/Postal Code', 'shift8-gravitysap')
+            )
+        );
     }
 }
 
