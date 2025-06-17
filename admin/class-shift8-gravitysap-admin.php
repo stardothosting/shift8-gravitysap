@@ -251,13 +251,13 @@ class Shift8_GravitySAP_Admin {
      */
     private function save_settings() {
         // Verify nonce
-        if (!isset($_POST['shift8_gravitysap_nonce']) || !wp_verify_nonce(wp_unslash(sanitize_text_field($_POST['shift8_gravitysap_nonce'])), 'shift8_gravitysap_settings')) {
+        if (!isset($_POST['shift8_gravitysap_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['shift8_gravitysap_nonce'])), 'shift8_gravitysap_settings')) {
             wp_die(esc_html__('Security check failed. Please try again.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
         // Prepare settings array
         $settings = array(
-            'sap_endpoint' => isset($_POST['sap_endpoint']) ? esc_url_raw(trim(wp_unslash($_POST['sap_endpoint']))) : '',
+            'sap_endpoint' => isset($_POST['sap_endpoint']) ? esc_url_raw(trim(sanitize_text_field(wp_unslash($_POST['sap_endpoint'])))) : '',
             'sap_company_db' => isset($_POST['sap_company_db']) ? sanitize_text_field(trim(wp_unslash($_POST['sap_company_db']))) : '',
             'sap_username' => isset($_POST['sap_username']) ? sanitize_user(trim(wp_unslash($_POST['sap_username']))) : '',
             'sap_debug' => isset($_POST['sap_debug']) ? '1' : '0'
@@ -265,7 +265,7 @@ class Shift8_GravitySAP_Admin {
         
         // Handle password encryption
         if (!empty($_POST['sap_password'])) {
-            $settings['sap_password'] = shift8_gravitysap_encrypt_password(trim(wp_unslash(sanitize_text_field($_POST['sap_password']))));
+            $settings['sap_password'] = shift8_gravitysap_encrypt_password(trim(sanitize_text_field(wp_unslash($_POST['sap_password']))));
         } else {
             // Keep existing password if new one is empty
             $existing_settings = get_option('shift8_gravitysap_settings', array());
@@ -337,7 +337,7 @@ class Shift8_GravitySAP_Admin {
      */
     public function ajax_test_connection() {
         // Verify nonce and capabilities
-        if (!isset($_POST['nonce']) || !wp_verify_nonce(wp_unslash(sanitize_text_field($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
             wp_send_json_error(array(
                 'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
             ));
@@ -401,7 +401,7 @@ class Shift8_GravitySAP_Admin {
      */
     public function ajax_get_custom_logs() {
         // Verify nonce and capabilities
-        if (!isset($_POST['nonce']) || !wp_verify_nonce(wp_unslash(sanitize_text_field($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
             wp_send_json_error(array(
                 'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
             ));
@@ -446,7 +446,7 @@ class Shift8_GravitySAP_Admin {
      */
     public function ajax_clear_custom_log() {
         // Verify nonce and capabilities
-        if (!isset($_POST['nonce']) || !wp_verify_nonce(wp_unslash(sanitize_text_field($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
             wp_send_json_error(array(
                 'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
             ));

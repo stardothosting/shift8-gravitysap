@@ -30,7 +30,7 @@ foreach ($required_settings as $setting) {
 }
 
 if (!empty($missing_settings)) {
-    die("Error: Missing required SAP settings: " . implode(', ', $missing_settings) . "\n" .
+    die("Error: Missing required SAP settings: " . esc_html(implode(', ', $missing_settings)) . "\n" .
         "Please configure these settings in the WordPress admin under Shift8 > SAP Integration.\n");
 }
 
@@ -48,9 +48,9 @@ $sap_service = new Shift8_GravitySAP_SAP_Service($settings);
 $result = $sap_service->test_connection();
 
 if ($result['success']) {
-    echo "Success: " . $result['message'] . "\n";
+    echo "Success: " . esc_html($result['message']) . "\n";
 } else {
-    echo "Error: " . $result['message'] . "\n";
+    echo "Error: " . esc_html($result['message']) . "\n";
 }
 
 // Note: Namespaced AuthService class was removed - authentication is handled within SAP service
@@ -62,8 +62,8 @@ try {
     $sap_service = new Shift8_GravitySAP_SAP_Service($settings);
     $result = $sap_service->test_connection();
     
-    echo "Connection test result: " . print_r($result, true) . "\n";
+    echo "Connection test result: " . esc_html(wp_json_encode($result)) . "\n";
     
 } catch (\Exception $e) {
-    echo "SAP service test failed: " . $e->getMessage() . "\n";
+    echo "SAP service test failed: " . esc_html($e->getMessage()) . "\n";
 } 

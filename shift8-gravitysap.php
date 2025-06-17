@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Gravity Forms SAP B1 Integration
  * Plugin URI: https://www.shift8web.ca
  * Description: Integrates Gravity Forms with SAP Business One to automatically create Business Partner records from form submissions. Features secure API communication, field mapping, and comprehensive logging.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * License: GPLv3
@@ -94,7 +94,7 @@ function shift8_gravitysap_debug_log($message, $data = null) {
     // Debug the debug setting itself (always log this) - but sanitize sensitive data
     if ($message === 'Debug setting check') {
         $sanitized_settings = shift8_gravitysap_sanitize_log_data($settings);
-        error_log('[Shift8 GravitySAP Debug Check] Settings: ' . print_r($sanitized_settings, true));
+        error_log('[Shift8 GravitySAP Debug Check] Settings: ' . wp_json_encode($sanitized_settings));
     }
     
     if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
@@ -110,7 +110,7 @@ function shift8_gravitysap_debug_log($message, $data = null) {
     $timestamp = current_time('Y-m-d H:i:s');
     $log_message = '[' . $timestamp . '] [Shift8 GravitySAP] ' . sanitize_text_field($message);
     if ($data !== null) {
-        $log_message .= ' - Data: ' . print_r($data, true);
+        $log_message .= ' - Data: ' . wp_json_encode($data);
     }
     $log_message .= PHP_EOL;
 
@@ -139,7 +139,7 @@ function shift8_gravitysap_debug_log($message, $data = null) {
         }
     } else {
         // Fallback to system error log if custom log file isn't writable
-        error_log('[Shift8 GravitySAP] ' . sanitize_text_field($message) . ($data ? ' - Data: ' . print_r($data, true) : ''));
+        error_log('[Shift8 GravitySAP] ' . sanitize_text_field($message) . ($data ? ' - Data: ' . wp_json_encode($data) : ''));
     }
 }
 

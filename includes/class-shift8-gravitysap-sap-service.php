@@ -120,7 +120,7 @@ class Shift8_GravitySAP_SAP_Service {
         
         $read_test = $this->test_read_business_partners();
         if (!$read_test['success']) {
-            throw new Exception('Cannot read Business Partners - API issue: ' . $read_test['message']);
+            throw new Exception('Cannot read Business Partners - API issue: ' . esc_html($read_test['message']));
         }
         
         shift8_gravitysap_debug_log('✅ Business Partner read test passed - API is working');
@@ -221,7 +221,7 @@ class Shift8_GravitySAP_SAP_Service {
                 $error_message .= $help_message;
             }
             
-            throw new Exception('SAP Business Partner creation failed: ' . $error_message);
+            throw new Exception('SAP Business Partner creation failed: ' . esc_html($error_message));
         }
     }
 
@@ -521,8 +521,8 @@ class Shift8_GravitySAP_SAP_Service {
             } else {
                 $json_error = json_last_error_msg();
                 shift8_gravitysap_debug_log('SAP Login: Failed to encode login data as JSON. Error: ' . $json_error);
-                shift8_gravitysap_debug_log('SAP Login: Raw login data: ' . print_r($login_data, true));
-                throw new Exception('Failed to encode login data as JSON: ' . $json_error);
+                shift8_gravitysap_debug_log('SAP Login: Raw login data: ' . wp_json_encode($login_data));
+                throw new Exception('Failed to encode login data as JSON: ' . esc_html($json_error));
             }
         } else {
             shift8_gravitysap_debug_log('SAP Login: No login data provided');
@@ -542,7 +542,7 @@ class Shift8_GravitySAP_SAP_Service {
         if (is_wp_error($response)) {
             $error_message = $response->get_error_message();
             shift8_gravitysap_debug_log('SAP Authentication failed: ' . $error_message);
-            throw new Exception('SAP Authentication failed: ' . $error_message);
+            throw new Exception('SAP Authentication failed: ' . esc_html($error_message));
         }
 
         $response_code = wp_remote_retrieve_response_code($response);
@@ -562,7 +562,7 @@ class Shift8_GravitySAP_SAP_Service {
             }
             
             shift8_gravitysap_debug_log('SAP Authentication failed: ' . $error_message);
-            throw new Exception('SAP Authentication failed: ' . $error_message);
+            throw new Exception('SAP Authentication failed: ' . esc_html($error_message));
         }
 
         $data = json_decode($body, true);
@@ -696,13 +696,13 @@ class Shift8_GravitySAP_SAP_Service {
             );
 
             shift8_gravitysap_debug_log('SAP HTTP Request URL: ' . $url);
-            shift8_gravitysap_debug_log('SAP HTTP Request Args: ' . print_r($args, true));
+            shift8_gravitysap_debug_log('SAP HTTP Request Args: ' . wp_json_encode($args));
 
             $response = wp_remote_request($url, $args);
 
             if (is_wp_error($response)) {
                 $error_message = $response->get_error_message();
-                throw new Exception('WordPress HTTP API Error: ' . $error_message);
+                throw new Exception('WordPress HTTP API Error: ' . esc_html($error_message));
             }
 
             $http_code = wp_remote_retrieve_response_code($response);
@@ -711,7 +711,7 @@ class Shift8_GravitySAP_SAP_Service {
 
             // Log the request and response details
             shift8_gravitysap_debug_log('SAP HTTP Response Code: ' . $http_code);
-            shift8_gravitysap_debug_log('SAP HTTP Response Headers: ' . print_r($response_headers, true));
+            shift8_gravitysap_debug_log('SAP HTTP Response Headers: ' . wp_json_encode($response_headers));
             shift8_gravitysap_debug_log('SAP HTTP Response Body: ' . $response_body);
 
             if ($http_code === 200) {
