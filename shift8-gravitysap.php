@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Gravity Forms SAP B1 Integration
  * Plugin URI: https://www.shift8web.ca
  * Description: Integrates Gravity Forms with SAP Business One to automatically create Business Partner records from form submissions. Features secure API communication, field mapping, and comprehensive logging.
- * Version: 1.0.3
+ * Version: 1.0.4
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * License: GPLv3
@@ -545,7 +545,7 @@ class Shift8_GravitySAP {
                                 <option value=""><?php esc_html_e('Select a field', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
                                 <?php
                                 foreach ($form['fields'] as $field) {
-                                    if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name'), true)) {
+                                    if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name', 'hidden'), true)) {
                                         $field_mapping = rgar($settings, 'field_mapping');
                                         $selected = selected(rgar($field_mapping, $sap_field), $field->id, false);
                                         echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
