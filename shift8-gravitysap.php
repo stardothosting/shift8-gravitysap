@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Gravity Forms SAP B1 Integration
  * Plugin URI: https://www.shift8web.ca
  * Description: Integrates Gravity Forms with SAP Business One to automatically create Business Partner records from form submissions. Features secure API communication, field mapping, and comprehensive logging.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * License: GPLv3
