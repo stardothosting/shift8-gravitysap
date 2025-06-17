@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Shift8 Gravity Forms SAP B1 Integration
  * Plugin URI: https://www.shift8web.ca
- * Description: Integrates Gravity Forms with SAP Business One using the Gravity Forms Add-On Framework to create Business Partner records.
+ * Description: Integrates Gravity Forms with SAP Business One to automatically create Business Partner records from form submissions. Features secure API communication, field mapping, and comprehensive logging.
  * Version: 1.0.0
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
@@ -50,15 +50,23 @@ define('SHIFT8_GRAVITYSAP_PLUGIN_BASENAME', plugin_basename(__FILE__));
 
 /**
  * Sanitize sensitive data for logging
+ *
+ * Recursively sanitizes array data to prevent sensitive information
+ * like passwords and usernames from appearing in logs.
+ *
+ * @since 1.0.0
+ * @param mixed $data The data to sanitize
+ * @return mixed Sanitized data with sensitive fields redacted
  */
 function shift8_gravitysap_sanitize_log_data($data) {
     if (is_array($data)) {
         $sanitized = array();
         foreach ($data as $key => $value) {
-            if (in_array(strtolower($key), array('password', 'sap_password', 'pass', 'pwd'))) {
+            $key_lower = strtolower($key);
+            if (in_array($key_lower, array('password', 'sap_password', 'pass', 'pwd'), true)) {
                 $sanitized[$key] = '***REDACTED***';
-            } elseif (in_array(strtolower($key), array('username', 'sap_username', 'user', 'login'))) {
-                $sanitized[$key] = substr($value, 0, 2) . '***';
+            } elseif (in_array($key_lower, array('username', 'sap_username', 'user', 'login'), true)) {
+                $sanitized[$key] = strlen($value) > 2 ? substr($value, 0, 2) . '***' : '***';
             } elseif (is_array($value)) {
                 $sanitized[$key] = shift8_gravitysap_sanitize_log_data($value);
             } else {
@@ -72,7 +80,13 @@ function shift8_gravitysap_sanitize_log_data($data) {
 
 /**
  * Global debug logging function
- * Checks if debug logging is enabled before logging
+ *
+ * Checks if debug logging is enabled before logging. Automatically
+ * sanitizes sensitive data to prevent credential exposure.
+ *
+ * @since 1.0.0
+ * @param string $message The log message
+ * @param mixed  $data    Optional data to include in the log
  */
 function shift8_gravitysap_debug_log($message, $data = null) {
     // Check if debug logging is enabled
@@ -95,7 +109,7 @@ function shift8_gravitysap_debug_log($message, $data = null) {
 
     // Format the log message
     $timestamp = current_time('Y-m-d H:i:s');
-    $log_message = '[' . $timestamp . '] [Shift8 GravitySAP] ' . $message;
+    $log_message = '[' . $timestamp . '] [Shift8 GravitySAP] ' . sanitize_text_field($message);
     if ($data !== null) {
         $log_message .= ' - Data: ' . print_r($data, true);
     }
@@ -115,8 +129,48 @@ function shift8_gravitysap_debug_log($message, $data = null) {
         file_put_contents($log_file, $log_message, FILE_APPEND | LOCK_EX);
     } else {
         // Fallback to system error log if custom log file isn't writable
-        error_log('[Shift8 GravitySAP] ' . $message . ($data ? ' - Data: ' . print_r($data, true) : ''));
+        error_log('[Shift8 GravitySAP] ' . sanitize_text_field($message) . ($data ? ' - Data: ' . print_r($data, true) : ''));
     }
+}
+
+/**
+ * Encrypt password for storage
+ *
+ * @since 1.0.0
+ * @param string $password The password to encrypt
+ * @return string The encrypted password
+ */
+function shift8_gravitysap_encrypt_password($password) {
+    if (empty($password)) {
+        return '';
+    }
+    
+    // Use WordPress salts for encryption key
+    $key = wp_salt('auth');
+    $iv = openssl_random_pseudo_bytes(16);
+    $encrypted = openssl_encrypt($password, 'AES-256-CBC', $key, 0, $iv);
+    
+    return base64_encode($iv . $encrypted);
+}
+
+/**
+ * Decrypt password from storage
+ *
+ * @since 1.0.0
+ * @param string $encrypted_password The encrypted password
+ * @return string The decrypted password
+ */
+function shift8_gravitysap_decrypt_password($encrypted_password) {
+    if (empty($encrypted_password)) {
+        return '';
+    }
+    
+    $key = wp_salt('auth');
+    $data = base64_decode($encrypted_password);
+    $iv = substr($data, 0, 16);
+    $encrypted = substr($data, 16);
+    
+    return openssl_decrypt($encrypted, 'AES-256-CBC', $key, 0, $iv);
 }
 
 // Check for minimum PHP version
@@ -134,16 +188,29 @@ if (file_exists(SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'vendor/autoload.php')) {
     require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'vendor/autoload.php';
 }
 
-// Main plugin class
+/**
+ * Main plugin class
+ *
+ * Handles plugin initialization, Gravity Forms integration,
+ * and SAP Business One communication.
+ *
+ * @since 1.0.0
+ */
 class Shift8_GravitySAP {
     
     /**
      * Plugin instance
+     *
+     * @since 1.0.0
+     * @var Shift8_GravitySAP|null
      */
     private static $instance = null;
     
     /**
-     * Get plugin instance
+     * Get plugin instance (Singleton pattern)
+     *
+     * @since 1.0.0
+     * @return Shift8_GravitySAP
      */
     public static function get_instance() {
         if (null === self::$instance) {
@@ -154,6 +221,10 @@ class Shift8_GravitySAP {
     
     /**
      * Constructor
+     *
+     * Sets up plugin hooks and initialization.
+     *
+     * @since 1.0.0
      */
     private function __construct() {
         add_action('plugins_loaded', array($this, 'init'));
@@ -163,43 +234,44 @@ class Shift8_GravitySAP {
     
     /**
      * Initialize plugin
+     *
+     * Loads textdomain, checks dependencies, and sets up integrations.
+     *
+     * @since 1.0.0
      */
     public function init() {
         shift8_gravitysap_debug_log('Plugin init() called');
         
-        // Load textdomain
+        // Load textdomain for internationalization
         load_plugin_textdomain('shift8-gravitysap', false, dirname(plugin_basename(__FILE__)) . '/languages');
         
-        // Initialize admin functionality (always available)
+        // Initialize admin functionality
         if (is_admin()) {
             $this->init_admin();
         }
         
-        // Debug Gravity Forms detection
+        // Check if Gravity Forms is active
         $gf_active = $this->is_gravity_forms_active();
         shift8_gravitysap_debug_log('Gravity Forms active check', array(
             'gf_active' => $gf_active ? 'true' : 'false',
             'GFForms_exists' => class_exists('GFForms') ? 'true' : 'false'
         ));
         
-        // Load the Gravity Forms Add-On Framework (full integration)
-        // TEMPORARILY DISABLED - USING DIRECT INTEGRATION INSTEAD
-        // add_action('gform_loaded', array($this, 'load_addon'), 5);
-        
-        // ENABLE DIRECT INTEGRATION - working approach
-        add_action('init', array($this, 'init_direct_integration'), 15);
-        
-        // Check if Gravity Forms is active for warnings
-        if (!$gf_active) {
+        // Initialize Gravity Forms integration
+        if ($gf_active) {
+            add_action('init', array($this, 'init_gravity_forms_integration'), 15);
+        } else {
             add_action('admin_notices', array($this, 'gravity_forms_missing_notice'));
         }
     }
     
     /**
      * Check if Gravity Forms is active
+     *
+     * @since 1.0.0
+     * @return bool True if Gravity Forms is active, false otherwise
      */
     private function is_gravity_forms_active() {
-        // Check if Gravity Forms plugin is active
         if (!function_exists('is_plugin_active')) {
             include_once(ABSPATH . 'wp-admin/includes/plugin.php');
         }
@@ -208,9 +280,13 @@ class Shift8_GravitySAP {
     }
     
     /**
-     * Initialize direct Gravity Forms integration (fallback approach)
+     * Initialize Gravity Forms integration
+     *
+     * Sets up form settings, submission processing, and related hooks.
+     *
+     * @since 1.0.0
      */
-    public function init_direct_integration() {
+    public function init_gravity_forms_integration() {
         if (!class_exists('GFForms')) {
             return;
         }
@@ -221,65 +297,17 @@ class Shift8_GravitySAP {
         // Handle settings page  
         add_action('gform_form_settings_page_sap_integration', array($this, 'form_settings_page'));
         
-        // Save settings - use the correct hook for form settings
+        // Save form settings
         add_filter('gform_pre_form_settings_save', array($this, 'save_form_settings'));
-        
-        // Debugging hook for form save process only
-        add_action('gform_form_settings_save', array($this, 'debug_form_save'), 10, 2);
         
         // Process form submissions
         add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2);
     }
-
-    /**
-     * Load Gravity Forms Add-On
-     */
-    public function load_addon() {
-        // Prevent multiple registrations
-        static $addon_loaded = false;
-        if ($addon_loaded) {
-            return;
-        }
-        
-        shift8_gravitysap_debug_log('load_addon() called');
-        
-        if (!class_exists('GFForms')) {
-            shift8_gravitysap_debug_log('GFForms class not found');
-            return;
-        }
-        
-        if (!method_exists('GFForms', 'include_addon_framework')) {
-            shift8_gravitysap_debug_log('GFForms::include_addon_framework method not found');
-            return;
-        }
-        
-        // Check if addon framework is already loaded
-        if (!class_exists('GFAddOn')) {
-            shift8_gravitysap_debug_log('Including addon framework');
-            GFForms::include_addon_framework();
-        }
-        
-        if (!class_exists('GFAddOn')) {
-            shift8_gravitysap_debug_log('GFAddOn class still not available after including framework');
-            return;
-        }
-        
-        require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-gf-shift8-gravitysap-addon.php';
-        
-        if (!class_exists('GF_Shift8_GravitySAP_AddOn')) {
-            shift8_gravitysap_debug_log('GF_Shift8_GravitySAP_AddOn class not found after including file');
-            return;
-        }
-        
-        shift8_gravitysap_debug_log('Registering addon');
-        GFAddOn::register('GF_Shift8_GravitySAP_AddOn');
-        
-        $addon_loaded = true;
-        shift8_gravitysap_debug_log('Add-on registration complete');
-    }
     
     /**
      * Initialize admin functionality
+     *
+     * @since 1.0.0
      */
     public function init_admin() {
         require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'admin/class-shift8-gravitysap-admin.php';
@@ -288,6 +316,8 @@ class Shift8_GravitySAP {
     
     /**
      * Show notice if Gravity Forms is not active
+     *
+     * @since 1.0.0
      */
     public function gravity_forms_missing_notice() {
         echo '<div class="notice notice-error"><p>';
@@ -297,21 +327,39 @@ class Shift8_GravitySAP {
     
     /**
      * Plugin activation
+     *
+     * Sets up default options and performs initial setup.
+     *
+     * @since 1.0.0
      */
     public function activate() {
-        // Set default options
+        // Set default options if they don't exist
         if (!get_option('shift8_gravitysap_settings')) {
             add_option('shift8_gravitysap_settings', array(
                 'sap_endpoint' => '',
                 'sap_company_db' => '',
                 'sap_username' => '',
-                'sap_password' => ''
+                'sap_password' => '',
+                'sap_debug' => '0'
             ));
         }
+        
+        // Create uploads directory for logs if it doesn't exist
+        $upload_dir = wp_upload_dir();
+        if (!is_dir($upload_dir['basedir'])) {
+            wp_mkdir_p($upload_dir['basedir']);
+        }
+        
+        shift8_gravitysap_debug_log('Plugin activated');
     }
     
     /**
      * Add SAP Integration tab to form settings
+     *
+     * @since 1.0.0
+     * @param array $menu_items Current menu items
+     * @param int   $form_id    Form ID
+     * @return array Modified menu items
      */
     public function add_form_settings_menu($menu_items, $form_id) {
         $menu_items[] = array(
@@ -324,57 +372,73 @@ class Shift8_GravitySAP {
 
     /**
      * Display the form settings page
+     *
+     * Renders the SAP integration configuration interface for individual forms.
+     *
+     * @since 1.0.0
      */
     public function form_settings_page() {
-        $form_id = rgget('id');
-        $form = GFAPI::get_form($form_id);
-        
-        // Check if this is a save request
-        if (rgpost('gform-settings-save')) {
-            shift8_gravitysap_debug_log('=== SAVE REQUEST DETECTED ===', array(
-                'POST' => $_POST
-            ));
-            
-            // Process the save
-            $form = $this->save_form_settings($form);
-            GFAPI::update_form($form);
-            
-            // Reload the form from database to get fresh settings
-            $form = GFAPI::get_form($form_id);
-            
-            // Show success message
-            GFCommon::add_message('SAP Integration settings saved successfully!');
+        // Verify user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-gravitysap'));
         }
         
-        // Check if this is a test request
-        if (rgpost('test-sap-integration')) {
-            shift8_gravitysap_debug_log('Debug setting check'); // This will always log to check settings
-            shift8_gravitysap_debug_log('=== TEST INTEGRATION REQUEST ===');
+        $form_id = absint(rgget('id'));
+        if (!$form_id) {
+            wp_die(esc_html__('Invalid form ID.', 'shift8-gravitysap'));
+        }
+        
+        $form = GFAPI::get_form($form_id);
+        if (!$form) {
+            wp_die(esc_html__('Form not found.', 'shift8-gravitysap'));
+        }
+        
+        // Handle form submissions with proper nonce verification
+        if (rgpost('gform-settings-save') && wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
+            $form = $this->save_form_settings($form);
+            GFAPI::update_form($form);
+            $form = GFAPI::get_form($form_id); // Reload fresh data
+            GFCommon::add_message(esc_html__('SAP Integration settings saved successfully!', 'shift8-gravitysap'));
+        }
+        
+        // Handle test integration with proper nonce verification
+        if (rgpost('test-sap-integration') && wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
             $test_result = $this->test_sap_integration($form);
             
             if ($test_result['success']) {
-                GFCommon::add_message('Test successful! Business Partner created in SAP: ' . $test_result['message']);
+                GFCommon::add_message(esc_html__('Test successful! Business Partner created in SAP: ', 'shift8-gravitysap') . esc_html($test_result['message']));
             } else {
-                GFCommon::add_error_message('Test failed: ' . $test_result['message']);
+                GFCommon::add_error_message(esc_html__('Test failed: ', 'shift8-gravitysap') . esc_html($test_result['message']));
             }
         }
         
-        // Check if this is a numbering series test request
-        if (rgpost('test-numbering-series')) {
-            shift8_gravitysap_debug_log('=== NUMBERING SERIES TEST REQUEST ===');
+        // Handle numbering series test with proper nonce verification
+        if (rgpost('test-numbering-series') && wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
             $test_result = $this->test_numbering_series();
             
             if ($test_result['success']) {
-                GFCommon::add_message('Numbering series check successful: ' . $test_result['message']);
+                GFCommon::add_message(esc_html__('Numbering series check successful: ', 'shift8-gravitysap') . esc_html($test_result['message']));
             } else {
-                GFCommon::add_error_message('Numbering series check failed: ' . $test_result['message']);
+                GFCommon::add_error_message(esc_html__('Numbering series check failed: ', 'shift8-gravitysap') . esc_html($test_result['message']));
             }
         }
         
-        // Get current settings (either fresh from DB after save, or existing)
+        // Get current settings
         $settings = rgar($form, 'sap_integration_settings', array());
         
-        // Use Gravity Forms proper page structure
+        // Render page
+        $this->render_form_settings_page($form_id, $form, $settings);
+    }
+    
+    /**
+     * Render the form settings page HTML
+     *
+     * @since 1.0.0
+     * @param int   $form_id  Form ID
+     * @param array $form     Form data
+     * @param array $settings Current settings
+     */
+    private function render_form_settings_page($form_id, $form, $settings) {
         GFFormSettings::page_header();
         ?>
         
@@ -420,49 +484,7 @@ class Shift8_GravitySAP {
                 <tr>
                     <th scope="row"><?php esc_html_e('Field Mapping', 'shift8-gravitysap'); ?></th>
                     <td>
-                        <table class="widefat">
-                            <thead>
-                                <tr>
-                                    <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
-                                    <th><?php esc_html_e('Gravity Form Field', 'shift8-gravitysap'); ?></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php
-                                $sap_fields = array(
-                                    'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
-                                    'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
-                                    'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
-                                    'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
-                                    'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
-                                    'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
-                                    'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
-                                );
-                                
-                                foreach ($sap_fields as $sap_field => $label) {
-                                    ?>
-                                    <tr>
-                                        <td><?php echo esc_html($label); ?></td>
-                                        <td>
-                                            <select name="sap_field_mapping[<?php echo esc_attr($sap_field); ?>]">
-                                                <option value=""><?php esc_html_e('Select a field', 'shift8-gravitysap'); ?></option>
-                                                <?php
-                                                foreach ($form['fields'] as $field) {
-                                                    if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name'))) {
-                                                        $field_mapping = rgar($settings, 'field_mapping');
-                                                        $selected = selected(rgar($field_mapping, $sap_field), $field->id, false);
-                                                        echo '<option value="' . esc_attr($field->id) . '" ' . $selected . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
-                                                    }
-                                                }
-                                                ?>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                    <?php
-                                }
-                                ?>
-                            </tbody>
-                        </table>
+                        <?php $this->render_field_mapping_table($form, $settings); ?>
                     </td>
                 </tr>
             </table>
@@ -473,6 +495,72 @@ class Shift8_GravitySAP {
         </form>
         
         <?php if (!empty(rgar($settings, 'enabled'))): ?>
+            <?php $this->render_test_sections($form_id, $settings); ?>
+        <?php endif; ?>
+        
+        <?php
+        GFFormSettings::page_footer();
+    }
+    
+    /**
+     * Render field mapping table
+     *
+     * @since 1.0.0
+     * @param array $form     Form data
+     * @param array $settings Current settings
+     */
+    private function render_field_mapping_table($form, $settings) {
+        $sap_fields = array(
+            'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
+            'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
+            'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
+            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
+            'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
+            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
+            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+        );
+        ?>
+        <table class="widefat">
+            <thead>
+                <tr>
+                    <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
+                    <th><?php esc_html_e('Gravity Form Field', 'shift8-gravitysap'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($sap_fields as $sap_field => $label): ?>
+                    <tr>
+                        <td><?php echo esc_html($label); ?></td>
+                        <td>
+                            <select name="sap_field_mapping[<?php echo esc_attr($sap_field); ?>]">
+                                <option value=""><?php esc_html_e('Select a field', 'shift8-gravitysap'); ?></option>
+                                <?php
+                                foreach ($form['fields'] as $field) {
+                                    if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name'), true)) {
+                                        $field_mapping = rgar($settings, 'field_mapping');
+                                        $selected = selected(rgar($field_mapping, $sap_field), $field->id, false);
+                                        echo '<option value="' . esc_attr($field->id) . '" ' . $selected . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
+                                    }
+                                }
+                                ?>
+                            </select>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php
+    }
+    
+    /**
+     * Render test sections (numbering series and integration tests)
+     *
+     * @since 1.0.0
+     * @param int   $form_id  Form ID
+     * @param array $settings Current settings
+     */
+    private function render_test_sections($form_id, $settings) {
+        ?>
         <hr style="margin: 30px 0;" />
         
         <!-- Numbering Series Test -->
@@ -502,72 +590,7 @@ class Shift8_GravitySAP {
             <h3><?php esc_html_e('Test SAP Integration', 'shift8-gravitysap'); ?></h3>
             <p><?php esc_html_e('Send test data to SAP Business One to validate your field mapping configuration.', 'shift8-gravitysap'); ?></p>
             
-            <table class="form-table">
-                <tr>
-                    <th scope="row">
-                        <label><?php esc_html_e('Test Data', 'shift8-gravitysap'); ?></label>
-                    </th>
-                    <td>
-                        <table class="widefat field-mapping-table">
-                            <thead>
-                                <tr>
-                                    <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
-                                    <th><?php esc_html_e('Mapped Form Field', 'shift8-gravitysap'); ?></th>
-                                    <th><?php esc_html_e('Test Value', 'shift8-gravitysap'); ?></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php
-                                $field_mapping = rgar($settings, 'field_mapping', array());
-                                $sap_fields = array(
-                                    'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
-                                    'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
-                                    'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
-                                    'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
-                                    'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
-                                    'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
-                                    'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
-                                );
-                                
-                                // Default test values based on field type
-                                $default_test_values = array(
-                                    'CardName' => 'Test Customer ' . date('Y-m-d H:i:s'),
-                                    'EmailAddress' => 'test@example.com',
-                                    'Phone1' => '+1-555-123-4567',
-                                    'BPAddresses.Street' => '123 Test Street',
-                                    'BPAddresses.City' => 'Test City',
-                                    'BPAddresses.State' => 'Test State',
-                                    'BPAddresses.ZipCode' => '12345',
-                                );
-                                
-                                foreach ($sap_fields as $sap_field => $label) {
-                                    $mapped_field_id = rgar($field_mapping, $sap_field);
-                                    if (!empty($mapped_field_id)) {
-                                        $mapped_field = GFFormsModel::get_field($form, $mapped_field_id);
-                                        $field_label = $mapped_field ? GFCommon::get_label($mapped_field) : 'Field ID: ' . $mapped_field_id;
-                                        ?>
-                                        <tr>
-                                            <td><?php echo esc_html($label); ?></td>
-                                            <td><?php echo esc_html($field_label); ?></td>
-                                            <td>
-                                                <input type="text" 
-                                                       name="test_values[<?php echo esc_attr($sap_field); ?>]" 
-                                                       value="<?php echo esc_attr(rgar($default_test_values, $sap_field)); ?>" 
-                                                       class="regular-text" />
-                                            </td>
-                                        </tr>
-                                        <?php
-                                    }
-                                }
-                                ?>
-                            </tbody>
-                        </table>
-                        <p class="description">
-                            <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravitysap'); ?>
-                        </p>
-                    </td>
-                </tr>
-            </table>
+            <?php $this->render_test_data_table($settings); ?>
             
             <p class="submit">
                 <input type="submit" name="test-sap-integration" value="<?php esc_attr_e('Test Integration', 'shift8-gravitysap'); ?>" class="button-secondary" />
@@ -577,53 +600,122 @@ class Shift8_GravitySAP {
             </p>
         </form>
         <?php endif; ?>
-        <?php endif; ?>
-        
         <?php
-        GFFormSettings::page_footer();
+    }
+    
+    /**
+     * Render test data table
+     *
+     * @since 1.0.0
+     * @param array $settings Current settings
+     */
+    private function render_test_data_table($settings) {
+        $field_mapping = rgar($settings, 'field_mapping', array());
+        $sap_fields = array(
+            'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
+            'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
+            'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
+            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
+            'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
+            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
+            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+        );
+        
+        $default_test_values = array(
+            'CardName' => 'Test Customer ' . date('Y-m-d H:i:s'),
+            'EmailAddress' => 'test@example.com',
+            'Phone1' => '+1-555-123-4567',
+            'BPAddresses.Street' => '123 Test Street',
+            'BPAddresses.City' => 'Test City',
+            'BPAddresses.State' => 'Test State',
+            'BPAddresses.ZipCode' => '12345',
+        );
+        ?>
+        
+        <table class="form-table">
+            <tr>
+                <th scope="row">
+                    <label><?php esc_html_e('Test Data', 'shift8-gravitysap'); ?></label>
+                </th>
+                <td>
+                    <table class="widefat field-mapping-table">
+                        <thead>
+                            <tr>
+                                <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
+                                <th><?php esc_html_e('Test Value', 'shift8-gravitysap'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($sap_fields as $sap_field => $label): ?>
+                                <?php $mapped_field_id = rgar($field_mapping, $sap_field); ?>
+                                <?php if (!empty($mapped_field_id)): ?>
+                                    <tr>
+                                        <td><?php echo esc_html($label); ?></td>
+                                        <td>
+                                            <input type="text" 
+                                                   name="test_values[<?php echo esc_attr($sap_field); ?>]" 
+                                                   value="<?php echo esc_attr(rgar($default_test_values, $sap_field)); ?>" 
+                                                   class="regular-text" />
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <p class="description">
+                        <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravitysap'); ?>
+                    </p>
+                </td>
+            </tr>
+        </table>
+        <?php
     }
 
     /**
      * Save form settings
+     *
+     * Validates and sanitizes form settings before saving.
+     *
+     * @since 1.0.0
+     * @param array $form Form data
+     * @return array Modified form data
      */
     public function save_form_settings($form) {
-        shift8_gravitysap_debug_log('=== SAVE METHOD TRIGGERED ===');
-        shift8_gravitysap_debug_log('save_form_settings called - DIRECT INTEGRATION', array(
-            'form_id' => $form['id'],
-            'POST' => $_POST,
-            'REQUEST' => $_REQUEST,
-            'posted_data' => array(
-                'sap_enabled' => rgpost('sap_enabled'),
-                'sap_feed_name' => rgpost('sap_feed_name'),
-                'sap_card_type' => rgpost('sap_card_type'),
-                'sap_field_mapping' => rgpost('sap_field_mapping')
-            ),
-            'current_subview' => rgget('subview'),
-            'is_sap_integration_save' => rgget('subview') === 'sap_integration'
-        ));
-        
         // Only process our settings when we're on our subview
         if (rgget('subview') !== 'sap_integration') {
-            shift8_gravitysap_debug_log('Not our subview, skipping save');
             return $form;
         }
         
+        // Verify nonce
+        if (!wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
+            return $form;
+        }
+        
+        // Sanitize and validate settings
         $settings = array(
-            'enabled' => rgpost('sap_enabled'),
-            'feed_name' => rgpost('sap_feed_name'),
-            'card_type' => rgpost('sap_card_type'),
-            'field_mapping' => rgpost('sap_field_mapping')
+            'enabled' => rgpost('sap_enabled') === '1' ? '1' : '0',
+            'feed_name' => sanitize_text_field(rgpost('sap_feed_name')),
+            'card_type' => in_array(rgpost('sap_card_type'), array('cCustomer', 'cSupplier', 'cLid'), true) ? rgpost('sap_card_type') : 'cCustomer',
+            'field_mapping' => array()
         );
         
-        shift8_gravitysap_debug_log('Settings prepared for save', array(
-            'settings' => $settings,
-            'form_before' => $form
-        ));
+        // Validate and sanitize field mapping
+        $field_mapping = rgpost('sap_field_mapping');
+        if (is_array($field_mapping)) {
+            $allowed_sap_fields = array('CardName', 'EmailAddress', 'Phone1', 'BPAddresses.Street', 'BPAddresses.City', 'BPAddresses.State', 'BPAddresses.ZipCode');
+            
+            foreach ($field_mapping as $sap_field => $field_id) {
+                if (in_array($sap_field, $allowed_sap_fields, true) && is_numeric($field_id) && $field_id > 0) {
+                    $settings['field_mapping'][$sap_field] = absint($field_id);
+                }
+            }
+        }
         
         $form['sap_integration_settings'] = $settings;
         
-        shift8_gravitysap_debug_log('Form updated with settings', array(
-            'form_after' => $form
+        shift8_gravitysap_debug_log('Form settings saved', array(
+            'form_id' => $form['id'],
+            'settings' => $settings
         ));
         
         return $form;
@@ -631,11 +723,17 @@ class Shift8_GravitySAP {
 
     /**
      * Process form submission
+     *
+     * Handles form submissions and sends data to SAP Business One.
+     *
+     * @since 1.0.0
+     * @param array $entry Entry data
+     * @param array $form  Form data
      */
     public function process_form_submission($entry, $form) {
         $settings = rgar($form, 'sap_integration_settings');
         
-        if (empty($settings['enabled'])) {
+        if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
             return;
         }
         
@@ -657,21 +755,49 @@ class Shift8_GravitySAP {
             // Create Business Partner in SAP
             $result = $sap_service->create_business_partner($business_partner_data);
             
-            if ($result) {
-                // Add entry note
-                GFFormsModel::add_note($entry['id'], 0, 'Shift8 SAP Integration', 
-                    sprintf('Business Partner successfully created in SAP B1. Card Code: %s', $result['CardCode']));
+            if ($result && isset($result['CardCode'])) {
+                // Add success note to entry
+                GFFormsModel::add_note(
+                    $entry['id'], 
+                    0, 
+                    'Shift8 SAP Integration', 
+                    sprintf(
+                        /* translators: %s: SAP Business Partner Card Code */
+                        esc_html__('Business Partner successfully created in SAP B1. Card Code: %s', 'shift8-gravitysap'), 
+                        esc_html($result['CardCode'])
+                    )
+                );
             }
             
         } catch (Exception $e) {
             // Add error note to entry
-            GFFormsModel::add_note($entry['id'], 0, 'Shift8 SAP Integration', 
-                sprintf('Error creating Business Partner in SAP B1: %s', $e->getMessage()));
+            GFFormsModel::add_note(
+                $entry['id'], 
+                0, 
+                'Shift8 SAP Integration', 
+                sprintf(
+                    /* translators: %s: Error message */
+                    esc_html__('Error creating Business Partner in SAP B1: %s', 'shift8-gravitysap'), 
+                    esc_html($e->getMessage())
+                )
+            );
+            
+            shift8_gravitysap_debug_log('Form submission processing failed', array(
+                'entry_id' => $entry['id'],
+                'form_id' => $form['id'],
+                'error' => $e->getMessage()
+            ));
         }
     }
 
     /**
      * Map entry data to Business Partner structure
+     *
+     * @since 1.0.0
+     * @param array $settings Form settings
+     * @param array $entry    Entry data
+     * @param array $form     Form data
+     * @return array Business Partner data structure
      */
     private function map_entry_to_business_partner($settings, $entry, $form) {
         $field_mapping = rgar($settings, 'field_mapping', array());
@@ -689,6 +815,9 @@ class Shift8_GravitySAP {
             if (empty($field_value)) {
                 continue;
             }
+
+            // Sanitize field value
+            $field_value = sanitize_text_field($field_value);
 
             // Handle address fields specially
             if (strpos($sap_field, 'BPAddresses.') === 0) {
@@ -709,6 +838,10 @@ class Shift8_GravitySAP {
 
     /**
      * Test SAP Integration with custom test values
+     *
+     * @since 1.0.0
+     * @param array $form Form data
+     * @return array Test result
      */
     public function test_sap_integration($form) {
         shift8_gravitysap_debug_log('=== TESTING SAP INTEGRATION ===');
@@ -726,7 +859,7 @@ class Shift8_GravitySAP {
             
             // Get form settings and test values
             $settings = rgar($form, 'sap_integration_settings', array());
-            $test_values = rgpost('test_values', array());
+            $test_values = $this->sanitize_test_values(rgpost('test_values', array()));
             
             if (empty($test_values)) {
                 return array(
@@ -735,12 +868,8 @@ class Shift8_GravitySAP {
                 );
             }
             
-            shift8_gravitysap_debug_log('Test values received', $test_values);
-            
             // Create business partner data from test values
             $business_partner_data = $this->map_test_values_to_business_partner($settings, $test_values);
-            
-            shift8_gravitysap_debug_log('Business partner data prepared', $business_partner_data);
             
             // Initialize SAP service
             require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
@@ -750,10 +879,9 @@ class Shift8_GravitySAP {
             $result = $sap_service->create_business_partner($business_partner_data);
             
             if ($result && isset($result['CardCode'])) {
-                shift8_gravitysap_debug_log('Test successful', $result);
                 return array(
                     'success' => true,
-                    'message' => 'Card Code: ' . $result['CardCode']
+                    'message' => 'Card Code: ' . esc_html($result['CardCode'])
                 );
             } else {
                 return array(
@@ -764,8 +892,7 @@ class Shift8_GravitySAP {
             
         } catch (Exception $e) {
             shift8_gravitysap_debug_log('Test failed with exception', array(
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => $e->getMessage()
             ));
             
             return array(
@@ -776,7 +903,40 @@ class Shift8_GravitySAP {
     }
     
     /**
+     * Sanitize test values
+     *
+     * @since 1.0.0
+     * @param array $test_values Raw test values
+     * @return array Sanitized test values
+     */
+    private function sanitize_test_values($test_values) {
+        if (!is_array($test_values)) {
+            return array();
+        }
+        
+        $sanitized = array();
+        $allowed_fields = array('CardName', 'EmailAddress', 'Phone1', 'BPAddresses.Street', 'BPAddresses.City', 'BPAddresses.State', 'BPAddresses.ZipCode');
+        
+        foreach ($test_values as $field => $value) {
+            if (in_array($field, $allowed_fields, true)) {
+                if ($field === 'EmailAddress') {
+                    $sanitized[$field] = sanitize_email($value);
+                } else {
+                    $sanitized[$field] = sanitize_text_field($value);
+                }
+            }
+        }
+        
+        return $sanitized;
+    }
+    
+    /**
      * Map test values to Business Partner structure
+     *
+     * @since 1.0.0
+     * @param array $settings    Form settings
+     * @param array $test_values Test values
+     * @return array Business Partner data structure
      */
     private function map_test_values_to_business_partner($settings, $test_values) {
         $card_type = rgar($settings, 'card_type', 'cCustomer');
@@ -807,6 +967,9 @@ class Shift8_GravitySAP {
 
     /**
      * Test SAP numbering series configuration
+     *
+     * @since 1.0.0
+     * @return array Test result
      */
     public function test_numbering_series() {
         shift8_gravitysap_debug_log('=== TESTING SAP NUMBERING SERIES ===');
@@ -834,8 +997,7 @@ class Shift8_GravitySAP {
             
         } catch (Exception $e) {
             shift8_gravitysap_debug_log('Numbering series test failed with exception', array(
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => $e->getMessage()
             ));
             
             return array(
@@ -846,29 +1008,20 @@ class Shift8_GravitySAP {
     }
 
     /**
-     * Debug form save process
-     */
-    public function debug_form_save($form, $is_new) {
-        shift8_gravitysap_debug_log('=== FORM SAVE DETECTED ===', array(
-            'form_id' => $form['id'],
-            'is_new' => $is_new,
-            'POST' => $_POST,
-            'current_subview' => rgget('subview')
-        ));
-    }
-    
-
-
-    /**
      * Plugin deactivation
+     *
+     * Cleans up scheduled events and temporary data.
+     *
+     * @since 1.0.0
      */
     public function deactivate() {
         // Clear any scheduled events
         wp_clear_scheduled_hook('shift8_gravitysap_cleanup_logs');
+        
+        shift8_gravitysap_debug_log('Plugin deactivated');
     }
 }
 
 // Initialize plugin
 shift8_gravitysap_debug_log('Plugin file loaded, initializing...');
-shift8_gravitysap_debug_log('Starting plugin initialization');
 Shift8_GravitySAP::get_instance(); 
