@@ -312,84 +312,29 @@ class Shift8_GravitySAP {
             GFCommon::add_message('SAP Integration settings saved successfully!');
         }
         
+        // Check if this is a test request
+        if (rgpost('test-sap-integration')) {
+            shift8_gravitysap_debug_log('=== TEST INTEGRATION REQUEST ===');
+            $test_result = $this->test_sap_integration($form);
+            
+            if ($test_result['success']) {
+                GFCommon::add_message('Test successful! Business Partner created in SAP: ' . $test_result['message']);
+            } else {
+                GFCommon::add_error_message('Test failed: ' . $test_result['message']);
+            }
+        }
+        
         // Get current settings (either fresh from DB after save, or existing)
         $settings = rgar($form, 'sap_integration_settings', array());
         
-        // Output the settings page integrated with Gravity Forms
+        // Use Gravity Forms proper page structure
+        GFFormSettings::page_header();
         ?>
-        <style type="text/css">
-            /* Make the SAP settings page look integrated with Gravity Forms */
-            .gform-settings__content {
-                background: #fff;
-                padding: 20px;
-                border: 1px solid #ddd;
-                border-radius: 3px;
-            }
-            .sap-settings-header {
-                border-bottom: 1px solid #ddd;
-                padding-bottom: 15px;
-                margin-bottom: 20px;
-            }
-            .sap-settings-header h3 {
-                margin: 0;
-                color: #23282d;
-            }
-            .form-table th {
-                width: 200px;
-                vertical-align: top;
-                padding-top: 15px;
-            }
-            .field-mapping-table {
-                margin-top: 10px;
-            }
-            .field-mapping-table th,
-            .field-mapping-table td {
-                padding: 8px 12px;
-                border: 1px solid #ddd;
-            }
-            .field-mapping-table th {
-                background: #f9f9f9;
-                font-weight: 600;
-            }
-        </style>
         
-        <script type="text/javascript">
-            // Keep the form submission within the GF interface
-            jQuery(document).ready(function($) {
-                $('#gform-settings').on('submit', function(e) {
-                    // Add loading state
-                    var $submitBtn = $('#gform-settings input[type="submit"]');
-                    $submitBtn.prop('disabled', true).val('Saving...');
-                    
-                    // Re-enable after a brief delay to prevent issues
-                    setTimeout(function() {
-                        $submitBtn.prop('disabled', false).val('Update Settings');
-                    }, 5000);
-                });
-                
-                // Check if we have a success message and scroll to it
-                var $successMessage = $('.updated, .notice-success');
-                if ($successMessage.length > 0) {
-                    $('html, body').animate({
-                        scrollTop: $successMessage.offset().top - 50
-                    }, 500);
-                    
-                    // Add a subtle highlight effect
-                    $successMessage.css('border-left', '4px solid #46b450');
-                }
-            });
-        </script>
-        
-        <div class="gform-settings__content">
-            <form method="post" id="gform-settings" action="">
-                <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
-                <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
-                <input type="hidden" name="subview" value="sap_integration" />
-                
-                <div class="sap-settings-header">
-                    <h3><span><i class="fa fa-cog"></i> <?php esc_html_e('SAP Business One Integration', 'shift8-gravitysap'); ?></span></h3>
-                    <p><?php esc_html_e('Configure how form submissions are sent to SAP Business One.', 'shift8-gravitysap'); ?></p>
-                </div>
+        <form method="post" id="gform-settings" action="">
+            <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
+            <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
+            <input type="hidden" name="subview" value="sap_integration" />
             
             <table class="form-table">
                 <tr>
@@ -475,13 +420,13 @@ class Shift8_GravitySAP {
                 </tr>
             </table>
             
-                <p class="submit">
-                    <input type="submit" name="gform-settings-save" value="<?php esc_attr_e('Update Settings', 'shift8-gravitysap'); ?>" class="button-primary gfbutton" />
-                    <span class="description" style="margin-left: 10px;"><?php esc_html_e('Save your SAP integration settings for this form.', 'shift8-gravitysap'); ?></span>
-                </p>
-            </form>
-        </div>
+            <p class="submit">
+                <input type="submit" name="gform-settings-save" value="<?php esc_attr_e('Update Settings', 'shift8-gravitysap'); ?>" class="button-primary" />
+            </p>
+        </form>
+        
         <?php
+        GFFormSettings::page_footer();
     }
 
     /**
