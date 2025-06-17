@@ -8,7 +8,7 @@
  * Author URI: https://shift8web.ca
  * License: GPLv3
  * License URI: http://www.gnu.org/licenses/gpl-3.0.html
- * Text Domain: shift8-gravitysap
+ * Text Domain: shift8-gravity-forms-sap-b1-integration
  * Domain Path: /languages
  * Requires at least: 5.0
  * Tested up to: 6.8
@@ -123,9 +123,20 @@ function shift8_gravitysap_debug_log($message, $data = null) {
         wp_mkdir_p($upload_dir['basedir']);
     }
 
-    // Write to custom log file
-    if (is_writable($upload_dir['basedir']) || is_writable($log_file)) {
-        file_put_contents($log_file, $log_message, FILE_APPEND | LOCK_EX);
+    // Write to custom log file using WordPress file system
+    global $wp_filesystem;
+    if (empty($wp_filesystem)) {
+        require_once ABSPATH . '/wp-admin/includes/file.php';
+        WP_Filesystem();
+    }
+    
+    if ($wp_filesystem && $wp_filesystem->is_writable($upload_dir['basedir'])) {
+        if ($wp_filesystem->exists($log_file)) {
+            $existing_content = $wp_filesystem->get_contents($log_file);
+            $wp_filesystem->put_contents($log_file, $existing_content . $log_message, FS_CHMOD_FILE);
+        } else {
+            $wp_filesystem->put_contents($log_file, $log_message, FS_CHMOD_FILE);
+        }
     } else {
         // Fallback to system error log if custom log file isn't writable
         error_log('[Shift8 GravitySAP] ' . sanitize_text_field($message) . ($data ? ' - Data: ' . print_r($data, true) : ''));
@@ -176,7 +187,7 @@ function shift8_gravitysap_decrypt_password($encrypted_password) {
 if (version_compare(PHP_VERSION, '7.4', '<')) {
     add_action('admin_notices', function() {
         echo '<div class="notice notice-error"><p>';
-        echo esc_html__('Shift8 Gravity Forms SAP B1 Integration requires PHP 7.4 or higher. Please upgrade PHP.', 'shift8-gravitysap');
+        echo esc_html__('Shift8 Gravity Forms SAP B1 Integration requires PHP 7.4 or higher. Please upgrade PHP.', 'shift8-gravity-forms-sap-b1-integration');
         echo '</p></div>';
     });
     return;
@@ -239,7 +250,7 @@ class Shift8_GravitySAP {
         shift8_gravitysap_debug_log('Plugin init() called');
         
         // Load textdomain for internationalization
-        load_plugin_textdomain('shift8-gravitysap', false, dirname(plugin_basename(__FILE__)) . '/languages');
+        load_plugin_textdomain('shift8-gravity-forms-sap-b1-integration', false, dirname(plugin_basename(__FILE__)) . '/languages');
         
         // Initialize admin functionality
         if (is_admin()) {
@@ -317,7 +328,7 @@ class Shift8_GravitySAP {
      */
     public function gravity_forms_missing_notice() {
         echo '<div class="notice notice-error"><p>';
-        echo esc_html__('Shift8 Gravity Forms SAP B1 Integration requires Gravity Forms to be installed and activated.', 'shift8-gravitysap');
+        echo esc_html__('Shift8 Gravity Forms SAP B1 Integration requires Gravity Forms to be installed and activated.', 'shift8-gravity-forms-sap-b1-integration');
         echo '</p></div>';
     }
     
@@ -360,7 +371,7 @@ class Shift8_GravitySAP {
     public function add_form_settings_menu($menu_items, $form_id) {
         $menu_items[] = array(
             'name' => 'sap_integration',
-            'label' => esc_html__('SAP Integration', 'shift8-gravitysap'),
+            'label' => esc_html__('SAP Integration', 'shift8-gravity-forms-sap-b1-integration'),
             'icon' => 'dashicons-admin-links dashicons' // Alternatives: dashicons-database, dashicons-cloud, dashicons-networking, dashicons-plugins-checked
         );
         return $menu_items;
@@ -376,17 +387,17 @@ class Shift8_GravitySAP {
     public function form_settings_page() {
         // Verify user capabilities
         if (!current_user_can('manage_options')) {
-            wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-gravitysap'));
+            wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
         $form_id = absint(rgget('id'));
         if (!$form_id) {
-            wp_die(esc_html__('Invalid form ID.', 'shift8-gravitysap'));
+            wp_die(esc_html__('Invalid form ID.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
         $form = GFAPI::get_form($form_id);
         if (!$form) {
-            wp_die(esc_html__('Form not found.', 'shift8-gravitysap'));
+            wp_die(esc_html__('Form not found.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
         // Handle form submissions with proper nonce verification
@@ -394,7 +405,7 @@ class Shift8_GravitySAP {
             $form = $this->save_form_settings($form);
             GFAPI::update_form($form);
             $form = GFAPI::get_form($form_id); // Reload fresh data
-            GFCommon::add_message(esc_html__('SAP Integration settings saved successfully!', 'shift8-gravitysap'));
+            GFCommon::add_message(esc_html__('SAP Integration settings saved successfully!', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
         // Handle test integration with proper nonce verification
@@ -402,9 +413,9 @@ class Shift8_GravitySAP {
             $test_result = $this->test_sap_integration($form);
             
             if ($test_result['success']) {
-                GFCommon::add_message(esc_html__('Test successful! Business Partner created in SAP: ', 'shift8-gravitysap') . esc_html($test_result['message']));
+                GFCommon::add_message(esc_html__('Test successful! Business Partner created in SAP: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
             } else {
-                GFCommon::add_error_message(esc_html__('Test failed: ', 'shift8-gravitysap') . esc_html($test_result['message']));
+                GFCommon::add_error_message(esc_html__('Test failed: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
             }
         }
         
@@ -413,9 +424,9 @@ class Shift8_GravitySAP {
             $test_result = $this->test_numbering_series();
             
             if ($test_result['success']) {
-                GFCommon::add_message(esc_html__('Numbering series check successful: ', 'shift8-gravitysap') . esc_html($test_result['message']));
+                GFCommon::add_message(esc_html__('Numbering series check successful: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
             } else {
-                GFCommon::add_error_message(esc_html__('Numbering series check failed: ', 'shift8-gravitysap') . esc_html($test_result['message']));
+                GFCommon::add_error_message(esc_html__('Numbering series check failed: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
             }
         }
         
@@ -446,39 +457,39 @@ class Shift8_GravitySAP {
             <table class="form-table">
                 <tr>
                     <th scope="row">
-                        <label for="sap_enabled"><?php esc_html_e('Enable SAP Integration', 'shift8-gravitysap'); ?></label>
+                        <label for="sap_enabled"><?php esc_html_e('Enable SAP Integration', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
                     </th>
                     <td>
                         <input type="checkbox" id="sap_enabled" name="sap_enabled" value="1" <?php checked(rgar($settings, 'enabled'), '1'); ?> />
-                        <label for="sap_enabled"><?php esc_html_e('Send form submissions to SAP Business One', 'shift8-gravitysap'); ?></label>
+                        <label for="sap_enabled"><?php esc_html_e('Send form submissions to SAP Business One', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
                     </td>
                 </tr>
                 
                 <tr>
                     <th scope="row">
-                        <label for="sap_feed_name"><?php esc_html_e('Feed Name', 'shift8-gravitysap'); ?></label>
+                        <label for="sap_feed_name"><?php esc_html_e('Feed Name', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
                     </th>
                     <td>
                         <input type="text" id="sap_feed_name" name="sap_feed_name" value="<?php echo esc_attr(rgar($settings, 'feed_name')); ?>" class="regular-text" />
-                        <p class="description"><?php esc_html_e('Enter a name to identify this SAP integration', 'shift8-gravitysap'); ?></p>
+                        <p class="description"><?php esc_html_e('Enter a name to identify this SAP integration', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
                     </td>
                 </tr>
                 
                 <tr>
                     <th scope="row">
-                        <label for="sap_card_type"><?php esc_html_e('Business Partner Type', 'shift8-gravitysap'); ?></label>
+                        <label for="sap_card_type"><?php esc_html_e('Business Partner Type', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
                     </th>
                     <td>
                         <select id="sap_card_type" name="sap_card_type">
-                            <option value="cCustomer" <?php selected(rgar($settings, 'card_type'), 'cCustomer'); ?>><?php esc_html_e('Customer', 'shift8-gravitysap'); ?></option>
-                            <option value="cSupplier" <?php selected(rgar($settings, 'card_type'), 'cSupplier'); ?>><?php esc_html_e('Vendor', 'shift8-gravitysap'); ?></option>
-                            <option value="cLid" <?php selected(rgar($settings, 'card_type'), 'cLid'); ?>><?php esc_html_e('Lead', 'shift8-gravitysap'); ?></option>
+                            <option value="cCustomer" <?php selected(rgar($settings, 'card_type'), 'cCustomer'); ?>><?php esc_html_e('Customer', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
+                            <option value="cSupplier" <?php selected(rgar($settings, 'card_type'), 'cSupplier'); ?>><?php esc_html_e('Vendor', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
+                            <option value="cLid" <?php selected(rgar($settings, 'card_type'), 'cLid'); ?>><?php esc_html_e('Lead', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
                         </select>
                     </td>
                 </tr>
                 
                 <tr>
-                    <th scope="row"><?php esc_html_e('Field Mapping', 'shift8-gravitysap'); ?></th>
+                    <th scope="row"><?php esc_html_e('Field Mapping', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
                     <td>
                         <?php $this->render_field_mapping_table($form, $settings); ?>
                     </td>
@@ -486,7 +497,7 @@ class Shift8_GravitySAP {
             </table>
             
             <p class="submit">
-                <input type="submit" name="gform-settings-save" value="<?php esc_attr_e('Update Settings', 'shift8-gravitysap'); ?>" class="button-primary" />
+                <input type="submit" name="gform-settings-save" value="<?php esc_attr_e('Update Settings', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-primary" />
             </p>
         </form>
         
@@ -507,20 +518,20 @@ class Shift8_GravitySAP {
      */
     private function render_field_mapping_table($form, $settings) {
         $sap_fields = array(
-            'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
-            'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
-            'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
-            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
-            'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
-            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
-            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+            'CardName' => esc_html__('Business Partner Name', 'shift8-gravity-forms-sap-b1-integration'),
+            'EmailAddress' => esc_html__('Email Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'Phone1' => esc_html__('Phone Number', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.City' => esc_html__('City', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravity-forms-sap-b1-integration'),
         );
         ?>
         <table class="widefat">
             <thead>
                 <tr>
-                    <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
-                    <th><?php esc_html_e('Gravity Form Field', 'shift8-gravitysap'); ?></th>
+                    <th><?php esc_html_e('SAP Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <th><?php esc_html_e('Gravity Form Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -529,13 +540,13 @@ class Shift8_GravitySAP {
                         <td><?php echo esc_html($label); ?></td>
                         <td>
                             <select name="sap_field_mapping[<?php echo esc_attr($sap_field); ?>]">
-                                <option value=""><?php esc_html_e('Select a field', 'shift8-gravitysap'); ?></option>
+                                <option value=""><?php esc_html_e('Select a field', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
                                 <?php
                                 foreach ($form['fields'] as $field) {
                                     if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name'), true)) {
                                         $field_mapping = rgar($settings, 'field_mapping');
                                         $selected = selected(rgar($field_mapping, $sap_field), $field->id, false);
-                                        echo '<option value="' . esc_attr($field->id) . '" ' . $selected . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
+                                        echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
                                     }
                                 }
                                 ?>
@@ -565,13 +576,13 @@ class Shift8_GravitySAP {
             <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
             <input type="hidden" name="subview" value="sap_integration" />
             
-            <h3><?php esc_html_e('Test SAP Numbering Series', 'shift8-gravitysap'); ?></h3>
-            <p><?php esc_html_e('Check if SAP Business One has the required numbering series configured for Business Partners.', 'shift8-gravitysap'); ?></p>
+            <h3><?php esc_html_e('Test SAP Numbering Series', 'shift8-gravity-forms-sap-b1-integration'); ?></h3>
+            <p><?php esc_html_e('Check if SAP Business One has the required numbering series configured for Business Partners.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
             
             <p class="submit">
-                <input type="submit" name="test-numbering-series" value="<?php esc_attr_e('Test Numbering Series', 'shift8-gravitysap'); ?>" class="button-secondary" />
+                <input type="submit" name="test-numbering-series" value="<?php esc_attr_e('Test Numbering Series', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-secondary" />
                 <span class="description" style="margin-left: 10px;">
-                    <?php esc_html_e('This will check if SAP B1 has the required numbering series configuration.', 'shift8-gravitysap'); ?>
+                    <?php esc_html_e('This will check if SAP B1 has the required numbering series configuration.', 'shift8-gravity-forms-sap-b1-integration'); ?>
                 </span>
             </p>
         </form>
@@ -583,15 +594,15 @@ class Shift8_GravitySAP {
             <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
             <input type="hidden" name="subview" value="sap_integration" />
             
-            <h3><?php esc_html_e('Test SAP Integration', 'shift8-gravitysap'); ?></h3>
-            <p><?php esc_html_e('Send test data to SAP Business One to validate your field mapping configuration.', 'shift8-gravitysap'); ?></p>
+            <h3><?php esc_html_e('Test SAP Integration', 'shift8-gravity-forms-sap-b1-integration'); ?></h3>
+            <p><?php esc_html_e('Send test data to SAP Business One to validate your field mapping configuration.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
             
             <?php $this->render_test_data_table($settings); ?>
             
             <p class="submit">
-                <input type="submit" name="test-sap-integration" value="<?php esc_attr_e('Test Integration', 'shift8-gravitysap'); ?>" class="button-secondary" />
+                <input type="submit" name="test-sap-integration" value="<?php esc_attr_e('Test Integration', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-secondary" />
                 <span class="description" style="margin-left: 10px;">
-                    <?php esc_html_e('This will create a test Business Partner in SAP Business One.', 'shift8-gravitysap'); ?>
+                    <?php esc_html_e('This will create a test Business Partner in SAP Business One.', 'shift8-gravity-forms-sap-b1-integration'); ?>
                 </span>
             </p>
         </form>
@@ -608,17 +619,17 @@ class Shift8_GravitySAP {
     private function render_test_data_table($settings) {
         $field_mapping = rgar($settings, 'field_mapping', array());
         $sap_fields = array(
-            'CardName' => esc_html__('Business Partner Name', 'shift8-gravitysap'),
-            'EmailAddress' => esc_html__('Email Address', 'shift8-gravitysap'),
-            'Phone1' => esc_html__('Phone Number', 'shift8-gravitysap'),
-            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravitysap'),
-            'BPAddresses.City' => esc_html__('City', 'shift8-gravitysap'),
-            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravitysap'),
-            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravitysap'),
+            'CardName' => esc_html__('Business Partner Name', 'shift8-gravity-forms-sap-b1-integration'),
+            'EmailAddress' => esc_html__('Email Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'Phone1' => esc_html__('Phone Number', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.City' => esc_html__('City', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravity-forms-sap-b1-integration'),
         );
         
         $default_test_values = array(
-            'CardName' => 'Test Customer ' . date('Y-m-d H:i:s'),
+                            'CardName' => 'Test Customer ' . gmdate('Y-m-d H:i:s'),
             'EmailAddress' => 'test@example.com',
             'Phone1' => '+1-555-123-4567',
             'BPAddresses.Street' => '123 Test Street',
@@ -631,14 +642,14 @@ class Shift8_GravitySAP {
         <table class="form-table">
             <tr>
                 <th scope="row">
-                    <label><?php esc_html_e('Test Data', 'shift8-gravitysap'); ?></label>
+                    <label><?php esc_html_e('Test Data', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
                 </th>
                 <td>
                     <table class="widefat field-mapping-table">
                         <thead>
                             <tr>
-                                <th><?php esc_html_e('SAP Field', 'shift8-gravitysap'); ?></th>
-                                <th><?php esc_html_e('Test Value', 'shift8-gravitysap'); ?></th>
+                                <th><?php esc_html_e('SAP Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                                <th><?php esc_html_e('Test Value', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -659,7 +670,7 @@ class Shift8_GravitySAP {
                         </tbody>
                     </table>
                     <p class="description">
-                        <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravitysap'); ?>
+                        <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravity-forms-sap-b1-integration'); ?>
                     </p>
                 </td>
             </tr>
@@ -759,7 +770,7 @@ class Shift8_GravitySAP {
                     'Shift8 SAP Integration', 
                     sprintf(
                         /* translators: %s: SAP Business Partner Card Code */
-                        esc_html__('Business Partner successfully created in SAP B1. Card Code: %s', 'shift8-gravitysap'), 
+                        esc_html__('Business Partner successfully created in SAP B1. Card Code: %s', 'shift8-gravity-forms-sap-b1-integration'), 
                         esc_html($result['CardCode'])
                     )
                 );
@@ -773,7 +784,7 @@ class Shift8_GravitySAP {
                 'Shift8 SAP Integration', 
                 sprintf(
                     /* translators: %s: Error message */
-                    esc_html__('Error creating Business Partner in SAP B1: %s', 'shift8-gravitysap'), 
+                    esc_html__('Error creating Business Partner in SAP B1: %s', 'shift8-gravity-forms-sap-b1-integration'), 
                     esc_html($e->getMessage())
                 )
             );
