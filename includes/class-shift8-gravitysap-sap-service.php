@@ -92,9 +92,12 @@ class Shift8_GravitySAP_SAP_Service {
             $body = wp_remote_retrieve_body($response);
             $result = json_decode($body, true);
             
-            Shift8_GravitySAP_Logger::log_info(
-                sprintf('Business Partner created successfully. CardCode: %s, CardName: %s', 
-                    $result['CardCode'], $result['CardName'])
+            shift8_gravitysap_debug_log(
+                'Business Partner created successfully',
+                array(
+                    'CardCode' => $result['CardCode'],
+                    'CardName' => $result['CardName']
+                )
             );
             
             return $result;
@@ -132,39 +135,47 @@ class Shift8_GravitySAP_SAP_Service {
             'method' => $method,
             'headers' => $headers,
             'timeout' => 30,
-            'sslverify' => false, // Skip SSL verification for testing
-            'body' => $data ? json_encode($data) : null
+            'sslverify' => false // Skip SSL verification for testing
         );
 
+        // Only add body if we have data
+        if ($data !== null) {
+            $args['body'] = json_encode($data);
+        }
+
         // Log the request details
-        Shift8_GravitySAP_Logger::log_debug(sprintf(
-            "SAP Request Details:\nURL: %s\nMethod: %s\nHeaders: %s\nBody: %s",
-            $url,
-            $method,
-            json_encode($headers),
-            $data ? json_encode($data) : 'none'
-        ));
+        shift8_gravitysap_debug_log(
+            'SAP Request Details',
+            array(
+                'URL' => $url,
+                'Method' => $method,
+                'Headers' => $headers,
+                'Body' => $data
+            )
+        );
 
         // Make the request
         $response = wp_remote_request($url, $args);
 
         // Log the response details
         if (is_wp_error($response)) {
-            Shift8_GravitySAP_Logger::log_error(sprintf(
-                "SAP Request Failed:\nError: %s",
-                $response->get_error_message()
-            ));
+            shift8_gravitysap_debug_log(
+                'SAP Request Failed',
+                array('error' => $response->get_error_message())
+            );
         } else {
             $response_code = wp_remote_retrieve_response_code($response);
             $response_body = wp_remote_retrieve_body($response);
             $response_headers = wp_remote_retrieve_headers($response);
 
-            Shift8_GravitySAP_Logger::log_debug(sprintf(
-                "SAP Response Details:\nStatus: %d\nHeaders: %s\nBody: %s",
-                $response_code,
-                json_encode($response_headers),
-                $response_body
-            ));
+            shift8_gravitysap_debug_log(
+                'SAP Response Details',
+                array(
+                    'Status' => $response_code,
+                    'Headers' => $response_headers,
+                    'Body' => $response_body
+                )
+            );
         }
 
         return $response;
@@ -208,22 +219,49 @@ class Shift8_GravitySAP_SAP_Service {
      * Authenticate with SAP Service Layer
      */
     private function authenticate() {
-        // Decode the base64 password
-        $decoded_password = base64_decode($this->password);
-        if ($decoded_password === false) {
-            Shift8_GravitySAP_Logger::log_error('Failed to decode base64 password');
-            throw new Exception('Invalid password format');
+        // Use the password as-is (should be plaintext for SAP API)
+        // The password might be base64 encoded for storage, but SAP expects plaintext
+        $password_to_use = $this->password;
+        
+        // If the password looks like base64, try to decode it
+        if (base64_encode(base64_decode($this->password, true)) === $this->password) {
+            $decoded = base64_decode($this->password, true);
+            if ($decoded !== false) {
+                // Ensure the decoded password is valid UTF-8
+                if (mb_check_encoding($decoded, 'UTF-8')) {
+                    $password_to_use = $decoded;
+                    shift8_gravitysap_debug_log('Using decoded password for SAP authentication');
+                } else {
+                    // If decoded password is not valid UTF-8, use original (it might already be plaintext)
+                    shift8_gravitysap_debug_log('Decoded password is not valid UTF-8, using original password');
+                }
+            }
         }
+
+        // Ensure all values are valid UTF-8 for JSON encoding
+        $company_db_clean = mb_convert_encoding($this->company_db, 'UTF-8', 'UTF-8');
+        $username_clean = mb_convert_encoding($this->username, 'UTF-8', 'UTF-8');
+        $password_clean = mb_convert_encoding($password_to_use, 'UTF-8', 'UTF-8');
 
         // Format exactly like the working curl command
         $login_data = array(
-            'CompanyDB' => $this->company_db,
-            'UserName' => $this->username,
-            'Password' => $decoded_password
+            'CompanyDB' => $company_db_clean,
+            'UserName' => $username_clean,
+            'Password' => $password_clean
+        );
+
+        // Debug the login data before JSON encoding
+        shift8_gravitysap_debug_log(
+            sprintf('SAP Login Data Debug:\nCompanyDB: "%s" (type: %s)\nUserName: "%s" (type: %s)\nPassword: "%s" (type: %s)\nPassword length: %d',
+                $this->company_db, gettype($this->company_db),
+                $this->username, gettype($this->username),
+                substr($password_to_use, 0, 3) . '***', gettype($password_to_use),
+                strlen($password_to_use)
+            )
         );
 
         // Log the request (without the password)
-        Shift8_GravitySAP_Logger::log_debug(
+        shift8_gravitysap_debug_log(
             sprintf('SAP Login Request: %s/Login - CompanyDB: %s, UserName: %s', 
                 $this->endpoint, $this->company_db, $this->username)
         );
@@ -236,16 +274,31 @@ class Shift8_GravitySAP_SAP_Service {
                 'Content-Type' => 'application/json'
             ),
             'timeout' => 30,
-            'sslverify' => false,
-            'body' => json_encode($login_data)
+            'sslverify' => false
         );
 
+        // Only add body if we have data (same pattern as make_request method)
+        if ($login_data !== null && !empty($login_data)) {
+            $json_body = json_encode($login_data);
+            if ($json_body !== false) {
+                $args['body'] = $json_body;
+                shift8_gravitysap_debug_log('SAP Login: Successfully encoded body: ' . $json_body);
+            } else {
+                $json_error = json_last_error_msg();
+                shift8_gravitysap_debug_log('SAP Login: Failed to encode login data as JSON. Error: ' . $json_error);
+                shift8_gravitysap_debug_log('SAP Login: Raw login data: ' . print_r($login_data, true));
+                throw new Exception('Failed to encode login data as JSON: ' . $json_error);
+            }
+        } else {
+            shift8_gravitysap_debug_log('SAP Login: No login data provided');
+        }
+
         // Log the exact request being sent
-        Shift8_GravitySAP_Logger::log_debug(
-            sprintf('SAP Login Request Details:\nURL: %s\nHeaders: %s\nBody: %s',
+        shift8_gravitysap_debug_log(
+            sprintf('SAP Login Request Details:\nURL: %s\nHeaders: %s\nArgs: %s',
                 $url,
                 json_encode($args['headers']),
-                json_encode($login_data)
+                json_encode($args)
             )
         );
 
@@ -253,7 +306,7 @@ class Shift8_GravitySAP_SAP_Service {
 
         if (is_wp_error($response)) {
             $error_message = $response->get_error_message();
-            Shift8_GravitySAP_Logger::log_error('SAP Authentication failed: ' . $error_message);
+            shift8_gravitysap_debug_log('SAP Authentication failed: ' . $error_message);
             throw new Exception('SAP Authentication failed: ' . $error_message);
         }
 
@@ -261,7 +314,7 @@ class Shift8_GravitySAP_SAP_Service {
         $body = wp_remote_retrieve_body($response);
         
         // Log the response code and body
-        Shift8_GravitySAP_Logger::log_debug(
+        shift8_gravitysap_debug_log(
             sprintf('SAP Login Response Code: %d, Body: %s', $response_code, $body)
         );
         
@@ -273,19 +326,19 @@ class Shift8_GravitySAP_SAP_Service {
                 $error_message = $error_data['error']['message']['value'];
             }
             
-            Shift8_GravitySAP_Logger::log_error('SAP Authentication failed: ' . $error_message);
+            shift8_gravitysap_debug_log('SAP Authentication failed: ' . $error_message);
             throw new Exception('SAP Authentication failed: ' . $error_message);
         }
 
         $data = json_decode($body, true);
 
         if (empty($data['SessionId'])) {
-            Shift8_GravitySAP_Logger::log_error('SAP Authentication failed: No session ID received');
+            shift8_gravitysap_debug_log('SAP Authentication failed: No session ID received');
             throw new Exception('SAP Authentication failed: No session ID received');
         }
 
         $this->session_id = $data['SessionId'];
-        Shift8_GravitySAP_Logger::log_info('SAP Authentication successful. SessionId: ' . $this->session_id);
+        shift8_gravitysap_debug_log('SAP Authentication successful. SessionId: ' . $this->session_id);
         
         return $this->session_id;
     }
@@ -305,9 +358,9 @@ class Shift8_GravitySAP_SAP_Service {
      */
     public function logout() {
         if ($this->session_id) {
-            $this->make_request('POST', '/Logout');
+            $this->make_request('POST', '/Logout', null);
             $this->session_id = null;
-            Shift8_GravitySAP_Logger::log_info('SAP Logout successful');
+            shift8_gravitysap_debug_log('SAP Logout successful');
         }
     }
 
@@ -404,8 +457,8 @@ class Shift8_GravitySAP_SAP_Service {
             fclose($verbose);
 
             // Log the request and response
-            Shift8_GravitySAP_Logger::log_debug("SAP cURL Request:\n" . $verbose_log);
-            Shift8_GravitySAP_Logger::log_debug("SAP cURL Response:\n" . $response);
+            shift8_gravitysap_debug_log("SAP cURL Request:\n" . $verbose_log);
+            shift8_gravitysap_debug_log("SAP cURL Response:\n" . $response);
 
             if ($http_code === 200) {
                 $data = json_decode($response, true);
@@ -431,7 +484,7 @@ class Shift8_GravitySAP_SAP_Service {
             throw new Exception('Connection failed: ' . $error_message);
 
         } catch (Exception $e) {
-            Shift8_GravitySAP_Logger::log_error('SAP Connection Error: ' . $e->getMessage());
+            shift8_gravitysap_debug_log('SAP Connection Error: ' . $e->getMessage());
             return array(
                 'success' => false,
                 'message' => $e->getMessage(),

@@ -55,6 +55,12 @@ define('SHIFT8_GRAVITYSAP_PLUGIN_BASENAME', plugin_basename(__FILE__));
 function shift8_gravitysap_debug_log($message, $data = null) {
     // Check if debug logging is enabled
     $settings = get_option('shift8_gravitysap_settings', array());
+    
+    // Debug the debug setting itself (always log this)
+    if ($message === 'Debug setting check') {
+        error_log('[Shift8 GravitySAP Debug Check] Settings: ' . print_r($settings, true));
+    }
+    
     if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
         return;
     }
@@ -314,6 +320,7 @@ class Shift8_GravitySAP {
         
         // Check if this is a test request
         if (rgpost('test-sap-integration')) {
+            shift8_gravitysap_debug_log('Debug setting check'); // This will always log to check settings
             shift8_gravitysap_debug_log('=== TEST INTEGRATION REQUEST ===');
             $test_result = $this->test_sap_integration($form);
             

@@ -200,10 +200,10 @@ class Shift8_GravitySAP_Admin {
                         <h3 class="hndle"><?php esc_html_e('Log Information', 'shift8-gravitysap'); ?></h3>
                         <div class="inside">
                             <?php
-                            $log_size = Shift8_GravitySAP_Logger::get_log_file_size();
-                            $log_writable = Shift8_GravitySAP_Logger::is_log_writable();
+                            $log_size = self::get_log_file_size();
+                            $log_writable = $this->is_log_writable();
                             ?>
-                            <p><strong><?php esc_html_e('Log File Size:', 'shift8-gravitysap'); ?></strong> <?php echo esc_html(Shift8_GravitySAP_Logger::format_file_size($log_size)); ?></p>
+                            <p><strong><?php esc_html_e('Log File Size:', 'shift8-gravitysap'); ?></strong> <?php echo esc_html($this->format_file_size($log_size)); ?></p>
                             <p><strong><?php esc_html_e('Log File Status:', 'shift8-gravitysap'); ?></strong> 
                                 <span class="<?php echo $log_writable ? 'shift8-status-good' : 'shift8-status-error'; ?>">
                                     <?php echo $log_writable ? esc_html__('Writable', 'shift8-gravitysap') : esc_html__('Not Writable', 'shift8-gravitysap'); ?>
@@ -560,7 +560,7 @@ class Shift8_GravitySAP_Admin {
             wp_die(esc_html__('Insufficient permissions', 'shift8-gravitysap'));
         }
 
-        Shift8_GravitySAP_Logger::clear_log();
+        // Clear log functionality disabled - use centralized logging
         
         wp_send_json_success(array(
             'message' => esc_html__('Log cleared successfully', 'shift8-gravitysap')
@@ -576,7 +576,7 @@ class Shift8_GravitySAP_Admin {
         }
 
         // Get the last 50 log entries
-        $logs = Shift8_GravitySAP_Logger::get_log_entries(50);
+        $logs = self::get_recent_log_entries(50);
         wp_send_json_success(array('logs' => $logs));
     }
 
@@ -678,5 +678,41 @@ class Shift8_GravitySAP_Admin {
             'log_exists' => $log_exists,
             'log_file_url' => $log_exists ? self::get_log_file_url() : null
         ));
+    }
+
+    /**
+     * Check if log file is writable
+     */
+    public function is_log_writable() {
+        $log_file = self::get_log_file_path();
+        $log_dir = dirname($log_file);
+        
+        // Check if directory is writable
+        if (!is_writable($log_dir)) {
+            return false;
+        }
+        
+        // If file exists, check if it's writable
+        if (file_exists($log_file)) {
+            return is_writable($log_file);
+        }
+        
+        // If file doesn't exist, check if we can create it
+        return is_writable($log_dir);
+    }
+
+
+
+    /**
+     * Format file size
+     */
+    public function format_file_size($size) {
+        if (is_string($size)) {
+            return $size; // Already formatted
+        }
+        
+        $units = array('B', 'KB', 'MB', 'GB');
+        $power = $size > 0 ? floor(log($size, 1024)) : 0;
+        return number_format($size / pow(1024, $power), 2, '.', ',') . ' ' . $units[$power];
     }
 } 
