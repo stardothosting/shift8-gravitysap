@@ -1,6 +1,6 @@
 === Shift8 Gravity Forms SAP B1 Integration ===
 * Contributors: shift8
-* Donate link: https://www.shift8web.ca
+* Donate link: https://shift8web.ca
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
