@@ -757,6 +757,9 @@ class Shift8_GravitySAP {
             // Map form fields to SAP Business Partner data
             $business_partner_data = $this->map_entry_to_business_partner($settings, $entry, $form);
             
+            // Decrypt password for production use (same as ajax_test_connection does)
+            $plugin_settings['sap_password'] = shift8_gravitysap_decrypt_password($plugin_settings['sap_password']);
+            
             // Initialize SAP service
             require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
             $sap_service = new Shift8_GravitySAP_SAP_Service($plugin_settings);
@@ -880,6 +883,9 @@ class Shift8_GravitySAP {
             // Create business partner data from test values
             $business_partner_data = $this->map_test_values_to_business_partner($settings, $test_values);
             
+            // Decrypt password for testing (same as ajax_test_connection does)
+            $plugin_settings['sap_password'] = shift8_gravitysap_decrypt_password($plugin_settings['sap_password']);
+            
             // Initialize SAP service
             require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
             $sap_service = new Shift8_GravitySAP_SAP_Service($plugin_settings);
@@ -993,6 +999,9 @@ class Shift8_GravitySAP {
                     'message' => 'SAP connection settings are incomplete. Please configure SAP settings first.'
                 );
             }
+            
+            // Decrypt password for testing (same as ajax_test_connection does)
+            $plugin_settings['sap_password'] = shift8_gravitysap_decrypt_password($plugin_settings['sap_password']);
             
             // Initialize SAP service
             require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
