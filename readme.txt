@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.0.7
+* Stable tag: 1.0.8
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -79,9 +79,17 @@ Common solutions:
 
 == Changelog ==
 
+= 1.0.8 =
+* Fixed all WordPress.org plugin checker compliance issues
+* Updated text domain to 'shift8-gravity-forms-sap-b1-integration'
+* Removed all development functions (error_log) for production compliance
+* Comprehensive testing framework with 65 automated tests
+* Removed WordPress.org directory assets from plugin code
+* Ready for WordPress.org plugin directory submission
+
 = 1.0.7 =
 * Updated plugin name to comply with WordPress.org trademark guidelines
-* Changed text domain to 'shift8-integration-for-gravity-forms-and-sap-business-one'
+* Changed display name to 'Shift8 Integration for Gravity Forms and SAP Business One'
 * Removed discouraged load_plugin_textdomain() function call
 * All functionality remains unchanged
 

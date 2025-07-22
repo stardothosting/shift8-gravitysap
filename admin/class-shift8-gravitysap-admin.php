@@ -65,10 +65,10 @@ class Shift8_GravitySAP_Admin {
         // Add submenu page under Shift8 dashboard
         add_submenu_page(
             'shift8-settings',
-            esc_html__('Shift8 Integration for Gravity Forms and SAP Business One', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
-            esc_html__('Gravity SAP', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
+            esc_html__('Shift8 Integration for Gravity Forms and SAP Business One', 'shift8-gravity-forms-sap-b1-integration'),
+            esc_html__('Gravity SAP', 'shift8-gravity-forms-sap-b1-integration'),
             'manage_options',
-            'shift8-integration-for-gravity-forms-and-sap-business-one',
+            'shift8-gravity-forms-sap-b1-integration',
             array($this, 'render_settings_page')
         );
     }
@@ -93,13 +93,13 @@ class Shift8_GravitySAP_Admin {
     public function shift8_main_page() {
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Shift8 Settings', 'shift8-integration-for-gravity-forms-and-sap-business-one'); ?></h1>
-            <p><?php esc_html_e('Welcome to the Shift8 settings page. Use the menu on the left to configure your Shift8 plugins.', 'shift8-integration-for-gravity-forms-and-sap-business-one'); ?></p>
+            <h1><?php esc_html_e('Shift8 Settings', 'shift8-gravity-forms-sap-b1-integration'); ?></h1>
+            <p><?php esc_html_e('Welcome to the Shift8 settings page. Use the menu on the left to configure your Shift8 plugins.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
             
             <div class="card">
-                <h2><?php esc_html_e('Available Plugins', 'shift8-integration-for-gravity-forms-and-sap-business-one'); ?></h2>
+                <h2><?php esc_html_e('Available Plugins', 'shift8-gravity-forms-sap-b1-integration'); ?></h2>
                 <ul>
-                    <li><strong><?php esc_html_e('Gravity SAP', 'shift8-integration-for-gravity-forms-and-sap-business-one'); ?></strong> - <?php esc_html_e('SAP Business One integration for Gravity Forms', 'shift8-integration-for-gravity-forms-and-sap-business-one'); ?></li>
+                    <li><strong><?php esc_html_e('Gravity SAP', 'shift8-gravity-forms-sap-b1-integration'); ?></strong> - <?php esc_html_e('SAP Business One integration for Gravity Forms', 'shift8-gravity-forms-sap-b1-integration'); ?></li>
                 </ul>
             </div>
         </div>
@@ -116,7 +116,7 @@ class Shift8_GravitySAP_Admin {
     public function render_settings_page() {
         // Verify user capabilities
         if (!current_user_can('manage_options')) {
-            wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-integration-for-gravity-forms-and-sap-business-one'));
+            wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-gravity-forms-sap-b1-integration'));
         }
 
         // Handle form submission
@@ -198,7 +198,7 @@ class Shift8_GravitySAP_Admin {
                 add_settings_error(
                     'shift8_gravitysap_settings',
                     'invalid_endpoint',
-                    esc_html__('Please enter a valid SAP Service Layer endpoint URL.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                    esc_html__('Please enter a valid SAP Service Layer endpoint URL.', 'shift8-gravity-forms-sap-b1-integration')
                 );
                 $sanitized['sap_endpoint'] = '';
             }
@@ -252,7 +252,7 @@ class Shift8_GravitySAP_Admin {
     private function save_settings() {
         // Verify nonce
         if (!isset($_POST['shift8_gravitysap_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['shift8_gravitysap_nonce'])), 'shift8_gravitysap_settings')) {
-            wp_die(esc_html__('Security check failed. Please try again.', 'shift8-integration-for-gravity-forms-and-sap-business-one'));
+            wp_die(esc_html__('Security check failed. Please try again.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
         // Prepare settings array
@@ -279,7 +279,7 @@ class Shift8_GravitySAP_Admin {
         add_settings_error(
             'shift8_gravitysap_settings',
             'settings_updated',
-            esc_html__('Settings saved successfully!', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
+            esc_html__('Settings saved successfully!', 'shift8-gravity-forms-sap-b1-integration'),
             'updated'
         );
     }
@@ -320,10 +320,10 @@ class Shift8_GravitySAP_Admin {
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('shift8_gravitysap_nonce'),
             'strings' => array(
-                'testing' => esc_html__('Testing...', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
-                'success' => esc_html__('Success!', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
-                'error' => esc_html__('Error:', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
-                'confirm_clear' => esc_html__('Are you sure you want to clear the log file?', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                'testing' => esc_html__('Testing...', 'shift8-gravity-forms-sap-b1-integration'),
+                'success' => esc_html__('Success!', 'shift8-gravity-forms-sap-b1-integration'),
+                'error' => esc_html__('Error:', 'shift8-gravity-forms-sap-b1-integration'),
+                'confirm_clear' => esc_html__('Are you sure you want to clear the log file?', 'shift8-gravity-forms-sap-b1-integration')
             )
         ));
     }
@@ -339,7 +339,7 @@ class Shift8_GravitySAP_Admin {
         // Verify nonce and capabilities
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
             wp_send_json_error(array(
-                'message' => esc_html__('Security check failed.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
             ));
         }
         
@@ -354,7 +354,7 @@ class Shift8_GravitySAP_Admin {
                     wp_send_json_error(array(
                         'message' => sprintf(
                             /* translators: %s: Field name */
-                            esc_html__('Missing required setting: %s', 'shift8-integration-for-gravity-forms-and-sap-business-one'),
+                            esc_html__('Missing required setting: %s', 'shift8-gravity-forms-sap-b1-integration'),
                             esc_html($field)
                         )
                     ));
@@ -373,7 +373,7 @@ class Shift8_GravitySAP_Admin {
             
             if ($result['success']) {
                 wp_send_json_success(array(
-                    'message' => esc_html__('Successfully connected to SAP Service Layer!', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                    'message' => esc_html__('Successfully connected to SAP Service Layer!', 'shift8-gravity-forms-sap-b1-integration')
                 ));
             } else {
                 wp_send_json_error(array(
@@ -403,7 +403,7 @@ class Shift8_GravitySAP_Admin {
         // Verify nonce and capabilities
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
             wp_send_json_error(array(
-                'message' => esc_html__('Security check failed.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
             ));
         }
         
@@ -413,7 +413,7 @@ class Shift8_GravitySAP_Admin {
             
             if (!file_exists($log_file)) {
                 wp_send_json_success(array(
-                    'logs' => array(esc_html__('No log file found.', 'shift8-integration-for-gravity-forms-and-sap-business-one')),
+                    'logs' => array(esc_html__('No log file found.', 'shift8-gravity-forms-sap-b1-integration')),
                     'log_size' => '0 B'
                 ));
                 return;
@@ -448,7 +448,7 @@ class Shift8_GravitySAP_Admin {
         // Verify nonce and capabilities
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
             wp_send_json_error(array(
-                'message' => esc_html__('Security check failed.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
             ));
         }
         
@@ -460,16 +460,16 @@ class Shift8_GravitySAP_Admin {
                 if (wp_delete_file($log_file)) {
                     shift8_gravitysap_debug_log('Debug log cleared by user');
                     wp_send_json_success(array(
-                        'message' => esc_html__('Log file cleared successfully.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                        'message' => esc_html__('Log file cleared successfully.', 'shift8-gravity-forms-sap-b1-integration')
                     ));
                 } else {
                     wp_send_json_error(array(
-                        'message' => esc_html__('Failed to clear log file.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                        'message' => esc_html__('Failed to clear log file.', 'shift8-gravity-forms-sap-b1-integration')
                     ));
                 }
             } else {
                 wp_send_json_success(array(
-                    'message' => esc_html__('Log file does not exist.', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+                    'message' => esc_html__('Log file does not exist.', 'shift8-gravity-forms-sap-b1-integration')
                 ));
             }
             

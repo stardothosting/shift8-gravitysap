@@ -1,105 +1,13 @@
-# Shift8 Gravity Forms SAP B1 Integration
+# Shift8 Integration for Gravity Forms and SAP Business One
 
-Contributors: shift8  
-Donate link: https://shift8web.ca  
-Tags: gravity forms, sap, business one, integration, crm  
-Requires at least: 5.0  
-Tested up to: 6.8  
-Stable tag: 1.0.5
-Requires PHP: 7.4  
-License: GPLv3  
-License URI: http://www.gnu.org/licenses/gpl-3.0.html  
-
-Integrates Gravity Forms with SAP Business One to automatically create Business Partner records from form submissions.
-
-## Description
+![WordPress Plugin Version](https://img.shields.io/badge/version-1.0.8-blue.svg)
+![WordPress Compatibility](https://img.shields.io/badge/WordPress-5.0%2B-green.svg)
+![PHP Compatibility](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)
+![License](https://img.shields.io/badge/license-GPLv3-red.svg)
 
 A secure WordPress plugin that integrates Gravity Forms with SAP Business One, automatically creating Business Partner records from form submissions.
 
-### Features
-
-* **Seamless Integration**: Direct integration with SAP Business One Service Layer API
-* **Field Mapping**: Flexible mapping between Gravity Forms fields and SAP Business Partner fields
-* **Security First**: Password encryption, input validation, and secure API communication
-* **Real-time Testing**: Built-in connection and integration testing tools
-* **Comprehensive Logging**: Detailed debug logging with sensitive data protection
-* **User-Friendly Interface**: Intuitive settings and configuration interface
-* **Error Handling**: Robust error handling with detailed feedback
-
-## Installation
-
-1. Download the plugin ZIP file
-2. Go to **WordPress Admin > Plugins > Add New**
-3. Click **Upload Plugin** and select the ZIP file
-4. Click **Install Now** and then **Activate**
-
-## Frequently Asked Questions
-
-### What are the requirements?
-
-**WordPress Environment:**
-* WordPress 5.0 or higher
-* PHP 7.4 or higher
-* Gravity Forms plugin (latest version)
-
-**SAP Business One Environment:**
-* SAP Business One version 9.3 or higher
-* Service Layer properly configured and accessible
-* SAP user with Business Partner creation rights
-* Numbering Series configured for Business Partners in SAP B1
-
-### How do I configure the plugin?
-
-1. Navigate to **WordPress Admin > Shift8 > Gravity SAP**
-2. Enter your SAP connection details
-3. Test the connection
-4. Go to your Gravity Form settings and enable SAP integration
-5. Map your form fields to SAP Business Partner fields
-
-### Why am I getting connection errors?
-
-Common solutions:
-1. Verify SAP Service Layer is running
-2. Check endpoint URL format (should end with /b1s/v1/)
-3. Test credentials in SAP Business One directly
-4. Review debug logs for detailed error information
-
-### How do I set up numbering series in SAP?
-
-1. Go to SAP B1 Administration > System Initialization > Document Numbering
-2. Set up series for Business Partners
-3. Ensure default series are configured
-4. Test using the built-in numbering series test tool
-
-## Screenshots
-
-1. Main settings page with SAP connection configuration
-2. Gravity Forms integration settings with field mapping
-3. Test connection and integration tools
-4. Debug logging interface
-
-## Changelog
-
-### 1.0.0
-* Initial release
-* SAP Business One Service Layer integration
-* Gravity Forms field mapping
-* Password encryption and security features
-* Debug logging with sensitive data protection
-* Connection and integration testing tools
-
-## Upgrade Notice
-
-### 1.0.0
-Initial release of the Shift8 Gravity Forms SAP B1 Integration plugin.
-
----
-
-# Shift8 Gravity Forms SAP B1 Integration
-
-A secure WordPress plugin that integrates Gravity Forms with SAP Business One, automatically creating Business Partner records from form submissions.
-
-## Features
+## 🚀 Features
 
 - **Seamless Integration**: Direct integration with SAP Business One Service Layer API
 - **Field Mapping**: Flexible mapping between Gravity Forms fields and SAP Business Partner fields
@@ -109,7 +17,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 - **User-Friendly Interface**: Intuitive settings and configuration interface
 - **Error Handling**: Robust error handling with detailed feedback
 
-## Requirements
+## 📋 Requirements
 
 ### WordPress Environment
 - **WordPress**: 5.0 or higher
@@ -122,14 +30,14 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 - **User Permissions**: SAP user with Business Partner creation rights
 - **Numbering Series**: Configured for Business Partners in SAP B1
 
-## Installation
+## 🔧 Installation
 
 1. Download the plugin ZIP file
 2. Go to **WordPress Admin > Plugins > Add New**
 3. Click **Upload Plugin** and select the ZIP file
 4. Click **Install Now** and then **Activate**
 
-## Configuration
+## ⚙️ Configuration
 
 ### Step 1: Configure SAP Connection
 1. Navigate to **WordPress Admin > Shift8 > Gravity SAP**
@@ -156,33 +64,35 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 2. Enter test data and click **Test Integration**
 3. Verify Business Partner creation in SAP Business One
 
-## Field Mapping
+## 🗺️ Field Mapping
 
 | SAP Field | Description | Required |
 |-----------|-------------|----------|
-| `CardName` | Business Partner Name | Yes |
-| `EmailAddress` | Email Address | No |
-| `Phone1` | Primary Phone Number | No |
-| `BPAddresses.Street` | Street Address | No |
-| `BPAddresses.City` | City | No |
-| `BPAddresses.State` | State/Province | No |
-| `BPAddresses.ZipCode` | Zip/Postal Code | No |
+| `CardName` | Business Partner Name | ✅ Yes |
+| `EmailAddress` | Email Address | ❌ No |
+| `Phone1` | Primary Phone Number | ❌ No |
+| `BPAddresses.Street` | Street Address | ❌ No |
+| `BPAddresses.City` | City | ❌ No |
+| `BPAddresses.State` | State/Province | ❌ No |
+| `BPAddresses.ZipCode` | Zip/Postal Code | ❌ No |
 
-## Troubleshooting
+## 🧪 Testing
 
-### Connection Issues
-1. Verify SAP Service Layer is running
-2. Check endpoint URL format
-3. Test credentials in SAP Business One
-4. Review debug logs for detailed error information
+This plugin includes a comprehensive automated testing suite:
 
-### Numbering Series Issues
-1. Configure numbering series in SAP B1 Administration
-2. Go to **Administration > System Initialization > Document Numbering**
-3. Set up series for Business Partners
-4. Ensure default series are configured
+- **65 automated tests** with **137 assertions**
+- **53% code coverage** across core functionality
+- **Brain/Monkey testing framework** for WordPress unit testing
+- **Mocked SAP API responses** for reliable testing
+- **CI-ready** test configuration
 
-## Security Features
+Run tests locally:
+```bash
+composer test
+composer test:coverage
+```
+
+## 🔒 Security Features
 
 - **Password Encryption**: All passwords encrypted using WordPress salts
 - **Input Validation**: All data sanitized and validated
@@ -190,7 +100,31 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 - **Access Control**: Admin-only access with capability checks
 - **Debug Protection**: Sensitive data automatically redacted from logs
 
-## How It Works
+## 🔧 Troubleshooting
+
+### ❌ Connection Issues
+1. Verify SAP Service Layer is running
+2. Check endpoint URL format
+3. Test credentials in SAP Business One
+4. Review debug logs for detailed error information
+
+### 🔢 Numbering Series Issues
+1. Configure numbering series in SAP B1 Administration
+2. Go to **Administration > System Initialization > Document Numbering**
+3. Set up series for Business Partners
+4. Ensure default series are configured
+
+## ⚡ How It Works
+
+```mermaid
+graph TD
+    A[User Submits Form] --> B[Plugin Validates SAP Integration]
+    B --> C[Data Mapping]
+    C --> D[SAP Authentication]
+    D --> E[Business Partner Creation]
+    E --> F[Success/Error Logging]
+    F --> G[Entry Notes Updated]
+```
 
 1. User submits Gravity Form with mapped fields
 2. Plugin validates form has SAP integration enabled
@@ -199,14 +133,31 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 5. Business Partner creation via SAP Service Layer API
 6. Success/error logging and entry notes
 
-## Support
+## 📞 Support
 
 For support and documentation:
-- Review debug logs for error details
-- Use built-in connection testing tools
-- Check SAP Service Layer documentation
-- Contact: https://www.shift8web.ca
+- 🐛 Review debug logs for error details
+- 🧪 Use built-in connection testing tools
+- 📚 Check SAP Service Layer documentation
+- 🌐 Contact: [https://www.shift8web.ca](https://www.shift8web.ca)
 
-## License
+## 🤝 Contributing
 
-GNU General Public License v3.0 or later 
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+## 🏷️ Plugin Information
+
+- **Contributors**: shift8
+- **Tags**: gravity forms, sap, business one, integration, crm
+- **Requires WordPress**: 5.0+
+- **Tested up to**: 6.8
+- **Requires PHP**: 7.4+
+- **License**: GPLv3 

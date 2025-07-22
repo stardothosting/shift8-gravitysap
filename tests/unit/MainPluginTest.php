@@ -150,7 +150,7 @@ class MainPluginTest extends TestCase {
         // Mock esc_html__
         Functions\expect('esc_html__')
             ->once()
-            ->with('SAP Integration', 'shift8-integration-for-gravity-forms-and-sap-business-one')
+            ->with('SAP Integration', 'shift8-gravity-forms-sap-b1-integration')
             ->andReturn('SAP Integration');
         
         $existing_menu = array(
