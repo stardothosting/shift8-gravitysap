@@ -2,9 +2,23 @@
 .git
 .gitignore
 .cursorrules
-assets
+# assets (moved to ../wordpress-org-assets/)
 LICENSE
 README.md
 push.exclude
 push.sh
 svn
+vendor
+# Test-related files and directories
+tests/
+phpunit.xml.dist
+phpunit-simple.xml
+composer.json
+composer.lock
+.phpunit.cache
+COVERAGE_REPORT.md
+# Development files
+.editorconfig
+.vscode/
+.idea/
+*.log

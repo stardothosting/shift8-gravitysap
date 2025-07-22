@@ -15,7 +15,7 @@ git push origin main
 mkdir ./svn/tags/$2
 rsync -ravzp --exclude-from './push.exclude' ./ ./svn/trunk
 rsync -ravzp --exclude-from './push.exclude' ./ ./svn/tags/$2
-rsync -ravzp ./assets/ ./svn/assets
+rsync -ravzp ../wordpress-org-assets/ ./svn/assets
 cd svn
 svn cp trunk tags/$2
 svn --username shift8 add tags/$2/*

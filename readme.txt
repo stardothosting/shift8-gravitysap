@@ -1,10 +1,10 @@
-=== Shift8 Gravity Forms SAP B1 Integration ===
+=== Shift8 Integration for Gravity Forms and SAP Business One ===
 * Contributors: shift8
 * Donate link: https://shift8web.ca
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.0.5
+* Stable tag: 1.0.7
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -79,6 +79,12 @@ Common solutions:
 
 == Changelog ==
 
+= 1.0.7 =
+* Updated plugin name to comply with WordPress.org trademark guidelines
+* Changed text domain to 'shift8-integration-for-gravity-forms-and-sap-business-one'
+* Removed discouraged load_plugin_textdomain() function call
+* All functionality remains unchanged
+
 = 1.0.0 =
 * Initial release
 * SAP Business One Service Layer integration
@@ -90,11 +96,11 @@ Common solutions:
 == Upgrade Notice ==
 
 = 1.0.0 =
-Initial release of the Shift8 Gravity Forms SAP B1 Integration plugin.
+Initial release of the Shift8 Integration for Gravity Forms and SAP Business One plugin.
 
 ---
 
-# Shift8 Gravity Forms SAP B1 Integration
+# Shift8 Integration for Gravity Forms and SAP Business One
 
 A secure WordPress plugin that integrates Gravity Forms with SAP Business One, automatically creating Business Partner records from form submissions.
 

@@ -1,0 +1,10 @@
+{
+    "redefinable-internals": [
+        "is_dir",
+        "function_exists", 
+        "class_exists",
+        "file_exists",
+        "file_get_contents",
+        "file_put_contents"
+    ]
+} 
