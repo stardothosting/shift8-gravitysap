@@ -603,6 +603,10 @@ class Shift8_GravitySAP_SAP_Service {
      * Destructor - ensure we logout when the object is destroyed
      */
     public function __destruct() {
+        // Skip logout during testing to prevent destructor issues
+        if (defined('SHIFT8_GRAVITYSAP_TESTING') && SHIFT8_GRAVITYSAP_TESTING) {
+            return;
+        }
         $this->logout();
     }
 

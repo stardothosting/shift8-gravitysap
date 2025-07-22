@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Test global helper functions using Brain/Monkey
  */
-class BrainMonkeyHelperFunctionsTest extends TestCase {
+class HelperFunctionsTest extends TestCase {
 
     /**
      * Set up before each test

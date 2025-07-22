@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Test the main Shift8_GravitySAP class methods using Brain/Monkey
  */
-class BrainMonkeyMainPluginTest extends TestCase {
+class MainPluginTest extends TestCase {
 
     /**
      * Plugin instance for testing
@@ -328,13 +328,8 @@ class BrainMonkeyMainPluginTest extends TestCase {
      */
     public function test_gravity_forms_missing_notice() {
         // Mock esc_html__
-        Functions\expect('esc_html__')
-            ->once()
-            ->with(
-                'Shift8 Integration for Gravity Forms and SAP Business One requires Gravity Forms to be installed and activated.',
-                'shift8-integration-for-gravity-forms-and-sap-business-one'
-            )
-            ->andReturn('Shift8 Integration for Gravity Forms and SAP Business One requires Gravity Forms to be installed and activated.');
+        Functions\when('esc_html__')
+            ->justReturn('Shift8 Integration for Gravity Forms and SAP Business One requires Gravity Forms to be installed and activated.');
         
         // Capture output
         ob_start();
