@@ -54,8 +54,8 @@ class AdminInterfaceTest extends TestCase {
         if (!defined('SHIFT8_GRAVITYSAP_PLUGIN_URL')) {
             define('SHIFT8_GRAVITYSAP_PLUGIN_URL', 'http://example.com/wp-content/plugins/shift8-gravitysap/');
         }
-        if (!defined('SHIFT8_GRAVITYSAP_VERSION')) {
-            define('SHIFT8_GRAVITYSAP_VERSION', '1.0.7');
+            if (!defined('SHIFT8_GRAVITYSAP_VERSION')) {
+        define('SHIFT8_GRAVITYSAP_VERSION', '1.1.1');
         }
         
         // Include the admin class

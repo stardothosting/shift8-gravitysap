@@ -143,28 +143,24 @@ class Shift8_GravitySAP_SAP_Service {
         $available_series = $this->get_available_numbering_series();
         shift8_gravitysap_debug_log('Available numbering series', array('series' => $available_series));
         
-        // Use the simplest possible approach - Customer type with minimal data
-        $business_partner_data['CardType'] = 'cCustomer';
+        // Ensure CardType is set correctly
+        if (!isset($business_partner_data['CardType'])) {
+            $business_partner_data['CardType'] = 'cCustomer';
+        }
         
-        // Try without any Series or CardCode - completely minimal
+        // Remove any Series or CardCode to let SAP auto-generate
         unset($business_partner_data['Series']);
         unset($business_partner_data['CardCode']);
         
-        // Keep only essential fields
-        $minimal_data = array(
-            'CardType' => 'cCustomer',
-            'CardName' => $business_partner_data['CardName']
-        );
-        
-        // If we have available series, try using the first one
+        // If we have available series, use the first one
         if (!empty($available_series)) {
-            $minimal_data['Series'] = $available_series[0];
+            $business_partner_data['Series'] = $available_series[0];
             shift8_gravitysap_debug_log('Using numbering series', array('series' => $available_series[0]));
         }
         
-        shift8_gravitysap_debug_log('Trying Business Partner creation', $minimal_data);
+        shift8_gravitysap_debug_log('Creating Business Partner with full data', $business_partner_data);
 
-        $response = $this->make_request('POST', '/BusinessPartners', $minimal_data);
+        $response = $this->make_request('POST', '/BusinessPartners', $business_partner_data);
 
         if (is_wp_error($response)) {
             throw new Exception('Failed to create Business Partner: ' . esc_html($response->get_error_message()));

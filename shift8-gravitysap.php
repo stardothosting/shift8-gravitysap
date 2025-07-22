@@ -1,33 +1,19 @@
 <?php
 /**
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
- * Plugin URI: https://www.shift8web.ca
- * Description: Integrates Gravity Forms with SAP Business One to automatically create Business Partner records from form submissions. Features secure API communication, field mapping, and comprehensive logging.
- * Version: 1.0.8
+ * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
+ * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
+ * Version: 1.1.1
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
- * License: GPLv3
- * License URI: http://www.gnu.org/licenses/gpl-3.0.html
  * Text Domain: shift8-gravity-forms-sap-b1-integration
  * Domain Path: /languages
  * Requires at least: 5.0
- * Tested up to: 6.8
+ * Tested up to: 6.4
  * Requires PHP: 7.4
- *
- * Copyright 2025 Shift8 Web
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * License: GPLv3 or later
+ * License URI: https://www.gnu.org/licenses/gpl-3.0.html
+ * Network: false
  */
 
 // Exit if accessed directly
@@ -41,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.0.8');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.1.1');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -237,6 +223,12 @@ class Shift8_GravitySAP {
         add_action('plugins_loaded', array($this, 'init'));
         register_activation_hook(__FILE__, array($this, 'activate'));
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
+        
+        // Form processing hooks
+        add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2);
+        
+        // Form validation hook for SAP field limits
+        add_filter('gform_validation', array($this, 'validate_sap_field_limits'));
     }
     
     /**
@@ -307,7 +299,7 @@ class Shift8_GravitySAP {
         add_filter('gform_pre_form_settings_save', array($this, 'save_form_settings'));
         
         // Process form submissions
-        add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2);
+        // add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2); // Moved to constructor
     }
     
     /**
@@ -509,6 +501,114 @@ class Shift8_GravitySAP {
     }
     
     /**
+     * Get available SAP Business Partner fields for mapping
+     *
+     * @since 1.1.0
+     * @return array Array of SAP field keys and labels
+     */
+    private function get_sap_fields() {
+        return array(
+            'CardName' => esc_html__('Business Partner Name', 'shift8-gravity-forms-sap-b1-integration'),
+            'EmailAddress' => esc_html__('Email Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'Phone1' => esc_html__('Telephone 1', 'shift8-gravity-forms-sap-b1-integration'),
+            'Phone2' => esc_html__('Telephone 2', 'shift8-gravity-forms-sap-b1-integration'),
+            'Cellular' => esc_html__('Mobile Phone', 'shift8-gravity-forms-sap-b1-integration'),
+            'Fax' => esc_html__('Fax Number', 'shift8-gravity-forms-sap-b1-integration'),
+            'Website' => esc_html__('Website', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.City' => esc_html__('City', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.Country' => esc_html__('Country', 'shift8-gravity-forms-sap-b1-integration'),
+        );
+    }
+
+    /**
+     * Get allowed SAP field keys for validation
+     *
+     * @since 1.1.0
+     * @return array Array of allowed SAP field keys
+     */
+    private function get_allowed_sap_fields() {
+        return array_keys($this->get_sap_fields());
+    }
+
+    /**
+     * Get SAP Business One field length limits and validation rules
+     *
+     * @since 1.1.0
+     * @return array Array of SAP field validation rules
+     */
+    private function get_sap_field_limits() {
+        return array(
+            'CardName' => array(
+                'max_length' => 100,
+                'required' => true,
+                'description' => 'Business Partner Name'
+            ),
+            'EmailAddress' => array(
+                'max_length' => 100,
+                'required' => false,
+                'format' => 'email',
+                'description' => 'Email Address'
+            ),
+            'Phone1' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'Telephone 1'
+            ),
+            'Phone2' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'Telephone 2'
+            ),
+            'Cellular' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'Mobile Phone'
+            ),
+            'Fax' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'Fax Number'
+            ),
+            'Website' => array(
+                'max_length' => 254,
+                'required' => false,
+                'format' => 'url',
+                'description' => 'Website URL'
+            ),
+            'BPAddresses.Street' => array(
+                'max_length' => 100,
+                'required' => false,
+                'description' => 'Street Address'
+            ),
+            'BPAddresses.City' => array(
+                'max_length' => 25,
+                'required' => false,
+                'description' => 'City'
+            ),
+            'BPAddresses.State' => array(
+                'max_length' => 3,
+                'required' => false,
+                'description' => 'State/Province',
+                'validation_message' => 'Use state codes (CA, NY, TX) - not full state names'
+            ),
+            'BPAddresses.ZipCode' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'Zip/Postal Code'
+            ),
+            'BPAddresses.Country' => array(
+                'max_length' => 2,
+                'required' => false,
+                'description' => 'Country',
+                'validation_message' => 'Use 2-letter country codes (US, CA, GB) - not full country names'
+            ),
+        );
+    }
+
+    /**
      * Render field mapping table
      *
      * @since 1.0.0
@@ -516,33 +616,32 @@ class Shift8_GravitySAP {
      * @param array $settings Current settings
      */
     private function render_field_mapping_table($form, $settings) {
-        $sap_fields = array(
-            'CardName' => esc_html__('Business Partner Name', 'shift8-gravity-forms-sap-b1-integration'),
-            'EmailAddress' => esc_html__('Email Address', 'shift8-gravity-forms-sap-b1-integration'),
-            'Phone1' => esc_html__('Phone Number', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.City' => esc_html__('City', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravity-forms-sap-b1-integration'),
-        );
+        $sap_fields = $this->get_sap_fields();
+        $sap_limits = $this->get_sap_field_limits();
         ?>
         <table class="widefat">
             <thead>
                 <tr>
                     <th><?php esc_html_e('SAP Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
                     <th><?php esc_html_e('Gravity Form Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <th><?php esc_html_e('SAP Limits', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($sap_fields as $sap_field => $label): ?>
                     <tr>
-                        <td><?php echo esc_html($label); ?></td>
+                        <td>
+                            <?php echo esc_html($label); ?>
+                            <?php if (isset($sap_limits[$sap_field]['required']) && $sap_limits[$sap_field]['required']): ?>
+                                <span style="color: red;">*</span>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <select name="sap_field_mapping[<?php echo esc_attr($sap_field); ?>]">
                                 <option value=""><?php esc_html_e('Select a field', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
                                 <?php
                                 foreach ($form['fields'] as $field) {
-                                    if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name', 'hidden'), true)) {
+                                    if (in_array($field->type, array('text', 'email', 'phone', 'address', 'name', 'hidden', 'website'), true)) {
                                         $field_mapping = rgar($settings, 'field_mapping');
                                         $selected = selected(rgar($field_mapping, $sap_field), $field->id, false);
                                         echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
@@ -551,10 +650,24 @@ class Shift8_GravitySAP {
                                 ?>
                             </select>
                         </td>
+                        <td>
+                            <?php if (isset($sap_limits[$sap_field])): ?>
+                                <small style="color: #666;">
+                                    Max: <?php echo esc_html($sap_limits[$sap_field]['max_length']); ?> chars
+                                    <?php if (isset($sap_limits[$sap_field]['validation_message'])): ?>
+                                        <br><em><?php echo esc_html($sap_limits[$sap_field]['validation_message']); ?></em>
+                                    <?php endif; ?>
+                                </small>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <p class="description">
+            <span style="color: red;">*</span> <?php esc_html_e('Required fields', 'shift8-gravity-forms-sap-b1-integration'); ?>
+            <br><?php esc_html_e('Form validation will automatically check these SAP field limits before submission.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+        </p>
         <?php
     }
     
@@ -617,24 +730,26 @@ class Shift8_GravitySAP {
      */
     private function render_test_data_table($settings) {
         $field_mapping = rgar($settings, 'field_mapping', array());
-        $sap_fields = array(
-            'CardName' => esc_html__('Business Partner Name', 'shift8-gravity-forms-sap-b1-integration'),
-            'EmailAddress' => esc_html__('Email Address', 'shift8-gravity-forms-sap-b1-integration'),
-            'Phone1' => esc_html__('Phone Number', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.City' => esc_html__('City', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravity-forms-sap-b1-integration'),
-        );
         
+        // Use the SAME field array as the mapping table
+        $sap_fields = $this->get_sap_fields();
+        
+        // Default test values - designed to comply with SAP Business One field length limits
+        // Important: State field is limited to ~3-4 characters (use state codes like 'CA', 'NY')
+        // CardName, Street, and City should be kept reasonably short to avoid SAP errors
         $default_test_values = array(
-                            'CardName' => 'Test Customer ' . gmdate('Y-m-d H:i:s'),
+            'CardName' => 'Test Customer ' . gmdate('md-His'),
             'EmailAddress' => 'test@example.com',
-            'Phone1' => '+1-555-123-4567',
-            'BPAddresses.Street' => '123 Test Street',
-            'BPAddresses.City' => 'Test City',
-            'BPAddresses.State' => 'Test State',
+            'Phone1' => '555-123-4567',
+            'Phone2' => '555-987-6543',
+            'Cellular' => '555-456-7890',
+            'Fax' => '555-654-3210',
+            'Website' => 'https://example.com',
+            'BPAddresses.Street' => '123 Main St',
+            'BPAddresses.City' => 'Anytown',
+            'BPAddresses.State' => 'CA',
             'BPAddresses.ZipCode' => '12345',
+            'BPAddresses.Country' => 'US',
         );
         ?>
         
@@ -670,6 +785,8 @@ class Shift8_GravitySAP {
                     </table>
                     <p class="description">
                         <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                        <br><strong><?php esc_html_e('Note:', 'shift8-gravity-forms-sap-b1-integration'); ?></strong> 
+                        <?php esc_html_e('Use state codes (CA, NY) not full names, and 2-letter country codes (US, CA) to avoid SAP field length errors.', 'shift8-gravity-forms-sap-b1-integration'); ?>
                     </p>
                 </td>
             </tr>
@@ -708,7 +825,7 @@ class Shift8_GravitySAP {
         // Validate and sanitize field mapping
         $field_mapping = rgpost('sap_field_mapping');
         if (is_array($field_mapping)) {
-            $allowed_sap_fields = array('CardName', 'EmailAddress', 'Phone1', 'BPAddresses.Street', 'BPAddresses.City', 'BPAddresses.State', 'BPAddresses.ZipCode');
+            $allowed_sap_fields = $this->get_allowed_sap_fields();
             
             foreach ($field_mapping as $sap_field => $field_id) {
                 if (in_array($sap_field, $allowed_sap_fields, true) && is_numeric($field_id) && $field_id > 0) {
@@ -927,7 +1044,7 @@ class Shift8_GravitySAP {
         }
         
         $sanitized = array();
-        $allowed_fields = array('CardName', 'EmailAddress', 'Phone1', 'BPAddresses.Street', 'BPAddresses.City', 'BPAddresses.State', 'BPAddresses.ZipCode');
+        $allowed_fields = $this->get_allowed_sap_fields();
         
         foreach ($test_values as $field => $value) {
             if (in_array($field, $allowed_fields, true)) {
@@ -1034,6 +1151,116 @@ class Shift8_GravitySAP {
         wp_clear_scheduled_hook('shift8_gravitysap_cleanup_logs');
         
         shift8_gravitysap_debug_log('Plugin deactivated');
+    }
+
+    /**
+     * Validate SAP field limits for Gravity Forms
+     *
+     * This function is hooked into gform_validation to validate
+     * form field values against SAP Business One field limits.
+     *
+     * @since 1.1.0
+     * @param array $validation_result The current validation result
+     * @return array The modified validation result
+     */
+    public function validate_sap_field_limits($validation_result) {
+        $form = $validation_result['form'];
+        $settings = rgar($form, 'sap_integration_settings', array());
+        
+        // Skip validation if SAP integration is not enabled
+        if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
+            return $validation_result;
+        }
+        
+        $field_mapping = rgar($settings, 'field_mapping', array());
+        if (empty($field_mapping)) {
+            return $validation_result;
+        }
+
+        $sap_field_limits = $this->get_sap_field_limits();
+
+        foreach ($field_mapping as $sap_field => $field_id) {
+            if (!isset($sap_field_limits[$sap_field])) {
+                continue;
+            }
+            
+            $field = RGFormsModel::get_field($form, $field_id);
+            if (!$field) {
+                continue;
+            }
+            
+            $field_value = rgpost("input_{$field_id}");
+            $field_label = GFCommon::get_label($field);
+            $limits = $sap_field_limits[$sap_field];
+
+            // Check required fields
+            if ($limits['required'] && empty($field_value)) {
+                $validation_result['is_valid'] = false;
+                $field->failed_validation = true;
+                $field->validation_message = sprintf(
+                    esc_html__('%s is required for SAP Business Partner creation.', 'shift8-gravity-forms-sap-b1-integration'),
+                    esc_html($field_label)
+                );
+                continue;
+            }
+
+            // Skip validation if field is empty and not required
+            if (empty($field_value)) {
+                continue;
+            }
+
+            // Check field length limits
+            $field_length = strlen($field_value);
+            $max_length = $limits['max_length'];
+
+            if ($field_length > $max_length) {
+                $validation_result['is_valid'] = false;
+                $field->failed_validation = true;
+                
+                $custom_message = isset($limits['validation_message']) ? $limits['validation_message'] : '';
+                if ($custom_message) {
+                    $field->validation_message = sprintf(
+                        esc_html__('%s: %s (Current: %d chars, Max: %d)', 'shift8-gravity-forms-sap-b1-integration'),
+                        esc_html($field_label),
+                        esc_html($custom_message),
+                        $field_length,
+                        $max_length
+                    );
+                } else {
+                    $field->validation_message = sprintf(
+                        esc_html__('%s cannot exceed %d characters (currently %d characters).', 'shift8-gravity-forms-sap-b1-integration'),
+                        esc_html($field_label),
+                        $max_length,
+                        $field_length
+                    );
+                }
+                continue;
+            }
+
+            // Check email format
+            if (isset($limits['format']) && $limits['format'] === 'email' && !is_email($field_value)) {
+                $validation_result['is_valid'] = false;
+                $field->failed_validation = true;
+                $field->validation_message = sprintf(
+                    esc_html__('%s must be a valid email address.', 'shift8-gravity-forms-sap-b1-integration'),
+                    esc_html($field_label)
+                );
+                continue;
+            }
+
+            // Check URL format
+            if (isset($limits['format']) && $limits['format'] === 'url' && !filter_var($field_value, FILTER_VALIDATE_URL)) {
+                $validation_result['is_valid'] = false;
+                $field->failed_validation = true;
+                $field->validation_message = sprintf(
+                    esc_html__('%s must be a valid URL.', 'shift8-gravity-forms-sap-b1-integration'),
+                    esc_html($field_label)
+                );
+                continue;
+            }
+        }
+
+        return $validation_result;
     }
 }
 

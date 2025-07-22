@@ -211,6 +211,9 @@ class MainPluginTest extends TestCase {
             ->with('Test Feed')
             ->andReturn('Test Feed');
         
+        // Mock esc_html__ for field labels
+        Functions\when('esc_html__')->alias(function($text) { return $text; });
+        
         $form = array('id' => 123);
         
         $result = $this->plugin->save_form_settings($form);
@@ -365,5 +368,114 @@ class MainPluginTest extends TestCase {
         $this->plugin->init_gravity_forms_integration();
         
         $this->assertTrue(true, 'Gravity Forms integration initialization completed');
+    }
+
+    /**
+     * Test SAP fields helper functions
+     */
+    public function test_sap_fields_helpers() {
+        // Mock esc_html__ for field labels
+        Functions\when('esc_html__')->alias(function($text) { return $text; });
+        
+        // Use reflection to test private methods
+        $reflection = new \ReflectionClass($this->plugin);
+        
+        $get_sap_fields = $reflection->getMethod('get_sap_fields');
+        $get_sap_fields->setAccessible(true);
+        
+        $get_allowed_sap_fields = $reflection->getMethod('get_allowed_sap_fields');
+        $get_allowed_sap_fields->setAccessible(true);
+        
+        $sap_fields = $get_sap_fields->invoke($this->plugin);
+        $allowed_fields = $get_allowed_sap_fields->invoke($this->plugin);
+        
+        // Test that we get expected fields
+        $this->assertIsArray($sap_fields, 'get_sap_fields should return array');
+        $this->assertArrayHasKey('CardName', $sap_fields, 'Should include CardName field');
+        $this->assertArrayHasKey('Phone1', $sap_fields, 'Should include Phone1 field');
+        $this->assertArrayHasKey('Phone2', $sap_fields, 'Should include Phone2 field');
+        $this->assertArrayHasKey('Cellular', $sap_fields, 'Should include Cellular field');
+        $this->assertArrayHasKey('BPAddresses.Country', $sap_fields, 'Should include Country field');
+        
+        // Test that allowed fields are the keys of sap fields
+        $this->assertIsArray($allowed_fields, 'get_allowed_sap_fields should return array');
+        $this->assertEquals(array_keys($sap_fields), $allowed_fields, 'Allowed fields should match SAP field keys');
+        
+        // Test expected count (12 fields total)
+        $this->assertCount(12, $sap_fields, 'Should have 12 SAP fields');
+        $this->assertCount(12, $allowed_fields, 'Should have 12 allowed fields');
+    }
+
+    /**
+     * Test SAP field limits validation - simplified test focusing on the validation logic
+     */
+    public function test_validate_sap_field_limits() {
+        // Mock esc_html__ for field labels and validation messages
+        Functions\when('esc_html__')->alias(function($text) { return $text; });
+        Functions\when('esc_html')->alias(function($text) { return htmlspecialchars($text); });
+        
+        // Mock basic Gravity Forms functions
+        Functions\when('rgar')->alias(function($array, $key, $default = null) {
+            return isset($array[$key]) ? $array[$key] : $default;
+        });
+        
+        // Test with disabled SAP integration - should pass through unchanged
+        $form_disabled = array(
+            'id' => 123,
+            'sap_integration_settings' => array(
+                'enabled' => '0'  // Disabled
+            )
+        );
+        
+        $validation_result_disabled = array(
+            'is_valid' => true,
+            'form' => $form_disabled
+        );
+        
+        $result_disabled = $this->plugin->validate_sap_field_limits($validation_result_disabled);
+        $this->assertTrue($result_disabled['is_valid'], 'Should pass validation when SAP integration is disabled');
+        
+        // Test with no field mapping - should pass through unchanged
+        $form_no_mapping = array(
+            'id' => 123,
+            'sap_integration_settings' => array(
+                'enabled' => '1',
+                'field_mapping' => array() // No mappings
+            )
+        );
+        
+        $validation_result_no_mapping = array(
+            'is_valid' => true,
+            'form' => $form_no_mapping
+        );
+        
+        $result_no_mapping = $this->plugin->validate_sap_field_limits($validation_result_no_mapping);
+        $this->assertTrue($result_no_mapping['is_valid'], 'Should pass validation when no field mapping exists');
+    }
+    
+    /**
+     * Test SAP field limits helper function
+     */
+    public function test_get_sap_field_limits() {
+        // Use reflection to test private method
+        $reflection = new \ReflectionClass($this->plugin);
+        $method = $reflection->getMethod('get_sap_field_limits');
+        $method->setAccessible(true);
+        
+        $limits = $method->invoke($this->plugin);
+        
+        $this->assertIsArray($limits, 'Should return array of field limits');
+        $this->assertArrayHasKey('CardName', $limits, 'Should include CardName limits');
+        $this->assertArrayHasKey('BPAddresses.State', $limits, 'Should include State limits');
+        
+        // Test specific field limits
+        $this->assertEquals(100, $limits['CardName']['max_length'], 'CardName should have 100 char limit');
+        $this->assertEquals(3, $limits['BPAddresses.State']['max_length'], 'State should have 3 char limit');
+        $this->assertTrue($limits['CardName']['required'], 'CardName should be required');
+        $this->assertFalse($limits['BPAddresses.State']['required'], 'State should not be required');
+        
+        // Test validation messages for special fields
+        $this->assertArrayHasKey('validation_message', $limits['BPAddresses.State'], 'State should have validation message');
+        $this->assertArrayHasKey('validation_message', $limits['BPAddresses.Country'], 'Country should have validation message');
     }
 } 

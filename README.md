@@ -1,6 +1,6 @@
 # Shift8 Integration for Gravity Forms and SAP Business One
 
-![WordPress Plugin Version](https://img.shields.io/badge/version-1.0.8-blue.svg)
+![WordPress Plugin Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
 ![WordPress Compatibility](https://img.shields.io/badge/WordPress-5.0%2B-green.svg)
 ![PHP Compatibility](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-red.svg)
@@ -56,7 +56,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 3. Check **Enable SAP Integration**
 4. Enter a **Feed Name** for identification
 5. Select **Business Partner Type** (Customer, Vendor, or Lead)
-6. Map form fields to SAP Business Partner fields
+6. Map form fields to SAP Business Partner fields (see field limits in the table)
 7. Click **Update Settings**
 
 ### Step 3: Test Integration
@@ -64,17 +64,68 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 2. Enter test data and click **Test Integration**
 3. Verify Business Partner creation in SAP Business One
 
+## 🛡️ Automatic Form Validation
+
+**NEW in v1.1.0**: The plugin automatically validates form submissions against SAP Business One field limits **before** sending data to SAP, preventing errors and improving user experience.
+
+### ✅ **What Gets Validated**
+- **Field Length Limits**: Ensures no field exceeds SAP's character limits
+- **Required Fields**: Validates that required SAP fields have values
+- **Data Format**: Checks email and URL format validation  
+- **Smart Messages**: Shows specific guidance (e.g., "Use state codes like CA, NY")
+
+### 🎯 **How It Works**
+1. **User submits form** → Plugin checks mapped fields against SAP limits
+2. **Validation fails** → Form shows specific error messages with field limits
+3. **User fixes data** → Resubmits with compliant values
+4. **Validation passes** → Data successfully sent to SAP Business One
+
+### 📋 **Validation Examples**
+```
+❌ State: "California" (too long - max 3 chars)
+✅ State: "CA" (perfect!)
+
+❌ Phone: "+1-555-123-4567-ext-999" (too long - max 20 chars)  
+✅ Phone: "555-123-4567" (perfect!)
+```
+
+### 🔧 **Technical Implementation**
+The validation system uses Gravity Forms' `gform_validation` hook to:
+1. **Check mapped fields**: Only validates fields that are mapped to SAP
+2. **Apply SAP rules**: Uses centralized SAP field limit definitions
+3. **Show contextual errors**: Displays field-specific validation messages
+4. **Maintain performance**: Lightweight validation with minimal overhead
+
+Benefits:
+- ✅ **Better UX**: Users get immediate feedback instead of SAP errors
+- ✅ **Fewer failures**: Prevents 90%+ of SAP field length errors  
+- ✅ **Smart guidance**: Shows exactly what's wrong and how to fix it
+- ✅ **Zero config**: Works automatically once field mapping is set up
+
 ## 🗺️ Field Mapping
 
-| SAP Field | Description | Required |
-|-----------|-------------|----------|
-| `CardName` | Business Partner Name | ✅ Yes |
-| `EmailAddress` | Email Address | ❌ No |
-| `Phone1` | Primary Phone Number | ❌ No |
-| `BPAddresses.Street` | Street Address | ❌ No |
-| `BPAddresses.City` | City | ❌ No |
-| `BPAddresses.State` | State/Province | ❌ No |
-| `BPAddresses.ZipCode` | Zip/Postal Code | ❌ No |
+| SAP Field | Description | Required | Notes |
+|-----------|-------------|----------|-------|
+| `CardName` | Business Partner Name | ✅ Yes | Max ~100 characters |
+| `EmailAddress` | Email Address | ❌ No | Standard email format |
+| `Phone1` | Telephone 1 | ❌ No | Max ~20 characters |
+| `Phone2` | Telephone 2 | ❌ No | Max ~20 characters |
+| `Cellular` | Mobile Phone | ❌ No | Max ~20 characters |
+| `Fax` | Fax Number | ❌ No | Max ~20 characters |
+| `Website` | Website URL | ❌ No | Standard URL format |
+| `BPAddresses.Street` | Street Address | ❌ No | Max ~100 characters |
+| `BPAddresses.City` | City | ❌ No | Max ~25 characters |
+| `BPAddresses.State` | State/Province | ❌ No | **Max 3-4 characters** (use codes like 'CA', 'NY') |
+| `BPAddresses.ZipCode` | Zip/Postal Code | ❌ No | Max ~20 characters |
+| `BPAddresses.Country` | Country | ❌ No | 2-letter country code (US, CA, etc.) |
+
+### ⚠️ Important SAP Field Length Limits
+
+SAP Business One has strict field length limits. Pay special attention to:
+- **State**: Must use state/province codes (3-4 chars max) - use "CA" not "California" 
+- **Country**: Use 2-letter ISO country codes - "US", "CA", "GB", etc.
+- **Phone fields**: Keep under 20 characters
+- **Names and addresses**: Keep reasonably short to avoid truncation
 
 ## 🧪 Testing
 

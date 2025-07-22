@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.0.8
+* Stable tag: 1.1.1
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -19,6 +19,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 * **Seamless Integration**: Direct integration with SAP Business One Service Layer API
 * **Field Mapping**: Flexible mapping between Gravity Forms fields and SAP Business Partner fields
+* **Automatic Form Validation**: Real-time validation against SAP field limits before submission
 * **Security First**: Password encryption, input validation, and secure API communication
 * **Real-time Testing**: Built-in connection and integration testing tools
 * **Comprehensive Logging**: Detailed debug logging with sensitive data protection
@@ -78,6 +79,29 @@ Common solutions:
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.1.1 =
+* Enhanced field mapping system - validation is now completely dynamic based on user's field mapping configuration
+* Improved validation efficiency - only validates fields that are actually mapped to SAP
+* Verified WordPress.org plugin directory compliance - all automated checks now pass
+* Code cleanup and optimization for better performance
+
+= 1.1.0 =
+* Expanded field mapping options - added Phone2, Mobile Phone, Fax, Website, and Country fields
+* Better alignment with SAP Business One field structure (Telephone 1, Telephone 2, etc.)
+* Enhanced test data with examples for all new fields
+* Improved field mapping interface for comprehensive Business Partner data
+* Fixed SAP field length compliance - test data now uses proper state codes (CA vs Test State)
+* Added comprehensive field length documentation and troubleshooting guide
+* **NEW: Automatic form validation** - validates all mapped fields against SAP limits before submission
+* Enhanced field mapping interface now shows SAP field limits and validation hints
+* Prevents "Value too long" SAP errors by catching field length issues in the form
+
+= 1.0.9 =
+* Fixed critical field mapping bug - all mapped fields now properly sent to SAP Business One
+* Email, phone, and address fields will now be correctly populated in SAP
+* Improved debug logging for Business Partner creation process
+* All field mapping functionality now works as designed
 
 = 1.0.8 =
 * Fixed all WordPress.org plugin checker compliance issues
@@ -171,17 +195,32 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 ## Field Mapping
 
-| SAP Field | Description | Required |
-|-----------|-------------|----------|
-| `CardName` | Business Partner Name | Yes |
-| `EmailAddress` | Email Address | No |
-| `Phone1` | Primary Phone Number | No |
-| `BPAddresses.Street` | Street Address | No |
-| `BPAddresses.City` | City | No |
-| `BPAddresses.State` | State/Province | No |
-| `BPAddresses.ZipCode` | Zip/Postal Code | No |
+| SAP Field | Description | Required | Max Length |
+|-----------|-------------|----------|------------|
+| `CardName` | Business Partner Name | Yes | ~100 chars |
+| `EmailAddress` | Email Address | No | Email format |
+| `Phone1` | Telephone 1 | No | ~20 chars |
+| `Phone2` | Telephone 2 | No | ~20 chars |
+| `Cellular` | Mobile Phone | No | ~20 chars |
+| `Fax` | Fax Number | No | ~20 chars |
+| `Website` | Website URL | No | URL format |
+| `BPAddresses.Street` | Street Address | No | ~100 chars |
+| `BPAddresses.City` | City | No | ~25 chars |
+| `BPAddresses.State` | State/Province | No | **3-4 chars** (codes only!) |
+| `BPAddresses.ZipCode` | Zip/Postal Code | No | ~20 chars |
+| `BPAddresses.Country` | Country | No | 2-letter code |
+
+**Important**: SAP has strict field length limits. Use state codes ("CA" not "California") and country codes ("US" not "United States").
 
 ## Troubleshooting
+
+### Field Length Errors
+If you get "Value too long in property" errors:
+1. Check that State field uses codes ("CA", "NY", "TX") not full names
+2. Verify Country field uses 2-letter codes ("US", "CA", "GB")
+3. Keep phone numbers under 20 characters
+4. Keep street addresses under 100 characters
+5. Keep city names under 25 characters
 
 ### Connection Issues
 1. Verify SAP Service Layer is running
