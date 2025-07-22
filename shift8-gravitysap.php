@@ -228,7 +228,7 @@ class Shift8_GravitySAP {
         add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2);
         
         // Form validation hook for SAP field limits
-        add_filter('gform_validation', array($this, 'validate_sap_field_limits'));
+        add_filter('gform_validation', array($this, 'validate_sap_field_limits'), 20); // Run after other validation
     }
     
     /**
@@ -1164,34 +1164,140 @@ class Shift8_GravitySAP {
      * @return array The modified validation result
      */
     public function validate_sap_field_limits($validation_result) {
+        shift8_gravitysap_debug_log('=== SAP FIELD VALIDATION STARTED ===');
+        
         $form = $validation_result['form'];
+        $form_id = rgar($form, 'id', 'unknown');
+        shift8_gravitysap_debug_log('Validating form', array('form_id' => $form_id));
+        
         $settings = rgar($form, 'sap_integration_settings', array());
         
         // Skip validation if SAP integration is not enabled
         if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
+            shift8_gravitysap_debug_log('SAP integration disabled for this form, skipping validation');
             return $validation_result;
         }
         
         $field_mapping = rgar($settings, 'field_mapping', array());
         if (empty($field_mapping)) {
+            shift8_gravitysap_debug_log('No field mapping configured, skipping validation');
             return $validation_result;
         }
 
+        shift8_gravitysap_debug_log('Field mapping found', array('mapping' => $field_mapping));
+
         $sap_field_limits = $this->get_sap_field_limits();
+        $validation_errors = 0;
 
         foreach ($field_mapping as $sap_field => $field_id) {
             if (!isset($sap_field_limits[$sap_field])) {
+                shift8_gravitysap_debug_log('No limits defined for SAP field', array('sap_field' => $sap_field));
                 continue;
             }
             
             $field = RGFormsModel::get_field($form, $field_id);
             if (!$field) {
+                shift8_gravitysap_debug_log('Could not find form field', array('field_id' => $field_id));
                 continue;
             }
             
-            $field_value = rgpost("input_{$field_id}");
+            // Get field label early for consistent use throughout validation
             $field_label = GFCommon::get_label($field);
+            
+            // Debug field type and input structure
+            shift8_gravitysap_debug_log('Field details', array(
+                'field_id' => $field_id,
+                'field_type' => $field->type,
+                'field_label' => $field_label
+            ));
+            
+            $field_value = rgpost("input_{$field_id}");
+            
+            // For composite fields (name, address), try to get the value differently
+            if (empty($field_value) && in_array($field->type, array('name', 'address'), true)) {
+                // Try to get the complete value for name fields
+                if ($field->type === 'name') {
+                    $first = rgpost("input_{$field_id}.3");  // First name
+                    $last = rgpost("input_{$field_id}.6");   // Last name
+                    if (!empty($first) || !empty($last)) {
+                        $field_value = trim($first . ' ' . $last);
+                    }
+                }
+                shift8_gravitysap_debug_log('Composite field value retrieved', array(
+                    'field_id' => $field_id,
+                    'composite_value' => $field_value,
+                    'first_name' => rgpost("input_{$field_id}.3"),
+                    'last_name' => rgpost("input_{$field_id}.6")
+                ));
+            }
+            
+            // Allow theme functions to provide field values during validation
+            // This is useful for fields that are populated by gform_pre_submission hooks
+            if (empty($field_value)) {
+                /**
+                 * Filter: shift8_gravitysap_get_field_value_for_validation
+                 * 
+                 * Allows theme functions to provide field values during validation
+                 * for fields that might be populated later in the form submission process.
+                 * 
+                 * @param string $field_value Current field value (empty)
+                 * @param int    $field_id    Gravity Forms field ID
+                 * @param object $field       Gravity Forms field object
+                 * @param array  $form        Gravity Forms form array
+                 * @param string $sap_field   SAP field name this is mapped to
+                 */
+                $field_value = apply_filters(
+                    'shift8_gravitysap_get_field_value_for_validation',
+                    $field_value,
+                    $field_id,
+                    $field,
+                    $form,
+                    $sap_field
+                );
+                
+                if (!empty($field_value)) {
+                    shift8_gravitysap_debug_log('Field value provided by theme filter', array(
+                        'field_id' => $field_id,
+                        'field_label' => $field_label,
+                        'provided_value' => $field_value,
+                        'sap_field' => $sap_field
+                    ));
+                }
+            }
+            
+            // For hidden or calculated fields that are still empty after all attempts,
+            // skip validation if they're likely to be populated by theme functions
+            if (empty($field_value)) {
+                if ($field->type === 'hidden' || (isset($field->visibility) && $field->visibility === 'hidden')) {
+                    shift8_gravitysap_debug_log('Skipping validation for hidden field (likely populated by theme function)', array(
+                        'field_id' => $field_id,
+                        'field_type' => $field->type,
+                        'field_label' => $field_label,
+                        'sap_field' => $sap_field
+                    ));
+                    continue; // Skip validation for hidden fields that might be populated later
+                }
+            }
+            
+            // Debug all input_XX values for this field
+            $all_inputs = array();
+            foreach ($_POST as $key => $value) {
+                if (strpos($key, "input_{$field_id}") === 0) {
+                    $all_inputs[$key] = $value;
+                }
+            }
+            
             $limits = $sap_field_limits[$sap_field];
+            
+            shift8_gravitysap_debug_log('Validating field', array(
+                'sap_field' => $sap_field,
+                'field_id' => $field_id,
+                'field_label' => $field_label,
+                'field_value' => $field_value,
+                'field_type' => $field->type,
+                'all_related_inputs' => $all_inputs,
+                'limits' => $limits
+            ));
 
             // Check required fields
             if ($limits['required'] && empty($field_value)) {
@@ -1201,11 +1307,14 @@ class Shift8_GravitySAP {
                     esc_html__('%s is required for SAP Business Partner creation.', 'shift8-gravity-forms-sap-b1-integration'),
                     esc_html($field_label)
                 );
+                $validation_errors++;
+                shift8_gravitysap_debug_log('Required field validation failed', array('field' => $field_label));
                 continue;
             }
 
             // Skip validation if field is empty and not required
             if (empty($field_value)) {
+                shift8_gravitysap_debug_log('Field is empty but not required, skipping');
                 continue;
             }
 
@@ -1234,6 +1343,12 @@ class Shift8_GravitySAP {
                         $field_length
                     );
                 }
+                $validation_errors++;
+                shift8_gravitysap_debug_log('Length validation failed', array(
+                    'field' => $field_label,
+                    'current_length' => $field_length,
+                    'max_length' => $max_length
+                ));
                 continue;
             }
 
@@ -1245,6 +1360,8 @@ class Shift8_GravitySAP {
                     esc_html__('%s must be a valid email address.', 'shift8-gravity-forms-sap-b1-integration'),
                     esc_html($field_label)
                 );
+                $validation_errors++;
+                shift8_gravitysap_debug_log('Email validation failed', array('field' => $field_label, 'value' => $field_value));
                 continue;
             }
 
@@ -1256,9 +1373,18 @@ class Shift8_GravitySAP {
                     esc_html__('%s must be a valid URL.', 'shift8-gravity-forms-sap-b1-integration'),
                     esc_html($field_label)
                 );
+                $validation_errors++;
+                shift8_gravitysap_debug_log('URL validation failed', array('field' => $field_label, 'value' => $field_value));
                 continue;
             }
+            
+            shift8_gravitysap_debug_log('Field validation passed', array('field' => $field_label));
         }
+
+        shift8_gravitysap_debug_log('=== SAP FIELD VALIDATION COMPLETED ===', array(
+            'total_errors' => $validation_errors,
+            'is_valid' => $validation_result['is_valid']
+        ));
 
         return $validation_result;
     }

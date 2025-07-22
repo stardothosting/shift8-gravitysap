@@ -153,17 +153,40 @@ composer test:coverage
 
 ## 🔧 Troubleshooting
 
-### ❌ Connection Issues
-1. Verify SAP Service Layer is running
-2. Check endpoint URL format
-3. Test credentials in SAP Business One
-4. Review debug logs for detailed error information
+### Field Length Errors
+If you get "Value too long in property" errors:
+1. Check that State field uses codes ("CA", "NY", "TX") not full names
+2. Verify Country field uses 2-letter codes ("US", "CA", "GB")
+3. Keep phone numbers under 20 characters
+4. Keep street addresses under 100 characters
+5. Keep city names under 25 characters
 
-### 🔢 Numbering Series Issues
-1. Configure numbering series in SAP B1 Administration
-2. Go to **Administration > System Initialization > Document Numbering**
-3. Set up series for Business Partners
-4. Ensure default series are configured
+### Fields Populated by Theme Functions
+If you use theme functions with `gform_pre_submission` to populate hidden fields (like combining first + last name), you can use the validation filter to provide values during validation:
+
+```php
+// Your existing theme function (runs after validation)
+add_action('gform_pre_submission_2', 'populate_full_name_hidden_field');
+function populate_full_name_hidden_field($form) {
+    $first = rgpost('input_52');  // First Name
+    $last = rgpost('input_53');   // Last Name
+    $_POST['input_67'] = trim($first . ' ' . $last); // Full Name into Hidden Field
+}
+
+// NEW: Add this to make validation work (runs during validation)
+add_filter('shift8_gravitysap_get_field_value_for_validation', 'provide_full_name_for_validation', 10, 5);
+function provide_full_name_for_validation($field_value, $field_id, $field, $form, $sap_field) {
+    // Only handle field 67 on form 2 that's mapped to CardName
+    if ($form['id'] == 2 && $field_id == 67 && $sap_field === 'CardName') {
+        $first = rgpost('input_52');  // First Name
+        $last = rgpost('input_53');   // Last Name
+        return trim($first . ' ' . $last);
+    }
+    return $field_value;
+}
+```
+
+This approach allows the plugin to validate the combined value during form validation while maintaining compatibility with your existing theme functions.
 
 ## ⚡ How It Works
 
