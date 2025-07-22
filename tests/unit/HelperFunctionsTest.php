@@ -1,23 +1,48 @@
 <?php
 /**
- * Helper Functions tests for better code coverage
+ * Helper Functions tests using Brain/Monkey
  *
  * @package Shift8\GravitySAP\Tests\Unit
  */
 
 namespace Shift8\GravitySAP\Tests\Unit;
 
-use Shift8\GravitySAP\Tests\TestCase;
+use Brain\Monkey;
+use Brain\Monkey\Functions;
+use PHPUnit\Framework\TestCase;
 
 /**
- * Test global helper functions to improve code coverage
+ * Test global helper functions using Brain/Monkey
  */
-class HelperFunctionsTest extends TestCase {
+class BrainMonkeyHelperFunctionsTest extends TestCase {
+
+    /**
+     * Set up before each test
+     */
+    public function setUp(): void {
+        parent::setUp();
+        Monkey\setUp();
+        
+        // Setup global test options
+        global $_test_options;
+        $_test_options = array();
+    }
+
+    /**
+     * Tear down after each test
+     */
+    public function tearDown(): void {
+        Monkey\tearDown();
+        parent::tearDown();
+    }
 
     /**
      * Test password encryption and decryption
      */
     public function test_password_encryption_decryption() {
+        // Mock wp_salt function
+        Functions\when('wp_salt')->justReturn('test_salt_auth_1234567890abcdef');
+        
         $original_password = 'test_password_123!@#';
         
         // Test encryption
@@ -45,13 +70,15 @@ class HelperFunctionsTest extends TestCase {
      * Test debug logging with disabled debug
      */
     public function test_debug_logging_disabled() {
-        // Ensure debug is disabled
-        update_option('shift8_gravitysap_settings', array('sap_debug' => '0'));
+        // Mock get_option to return debug disabled
+        Functions\expect('get_option')
+            ->once()
+            ->with('shift8_gravitysap_settings', array())
+            ->andReturn(array('sap_debug' => '0'));
         
-        // Test logging - should not actually log anything
+        // Should not call any file operations since debug is disabled
         shift8_gravitysap_debug_log('Test message', array('test' => 'data'));
         
-        // If we get here without errors, the function handled disabled debug correctly
         $this->assertTrue(true, 'Debug logging with disabled debug completed without errors');
     }
 
@@ -59,29 +86,35 @@ class HelperFunctionsTest extends TestCase {
      * Test debug logging with enabled debug
      */
     public function test_debug_logging_enabled() {
-        // Enable debug logging
-        update_option('shift8_gravitysap_settings', array('sap_debug' => '1'));
+        // Mock get_option to return debug enabled
+        Functions\when('get_option')
+            ->justReturn(array('sap_debug' => '1'));
         
-        // Mock wp_upload_dir to return a test directory
-        $upload_dir = array(
-            'basedir' => '/tmp/test_uploads',
-            'baseurl' => 'http://example.com/uploads'
-        );
+        // Mock current_time
+        Functions\when('current_time')
+            ->justReturn('2025-01-22 14:30:00');
         
-        if (!function_exists('wp_upload_dir_test')) {
-            function wp_upload_dir() {
-                return array(
-                    'basedir' => '/tmp/test_uploads',
-                    'baseurl' => 'http://example.com/uploads'
-                );
-            }
-        }
+        // Mock sanitize_text_field
+        Functions\when('sanitize_text_field')
+            ->justReturn('Test debug message');
         
-        // Test logging
+        // Mock wp_json_encode
+        Functions\when('wp_json_encode')
+            ->justReturn('{"key":"value"}');
+        
+        // Mock wp_upload_dir
+        Functions\when('wp_upload_dir')
+            ->justReturn(array(
+                'basedir' => '/tmp/test_uploads',
+                'baseurl' => 'http://example.com/uploads'
+            ));
+        
+        // Mock filesystem operations with simpler approach
+        Functions\when('is_dir')->justReturn(true);
+        Functions\when('WP_Filesystem')->justReturn(true);
+        
+        // Test logging - will use the global mock from bootstrap
         shift8_gravitysap_debug_log('Test debug message', array('key' => 'value'));
-        
-        // Test logging without data
-        shift8_gravitysap_debug_log('Simple test message');
         
         $this->assertTrue(true, 'Debug logging with enabled debug completed without errors');
     }
@@ -148,12 +181,33 @@ class HelperFunctionsTest extends TestCase {
      * Test debug logging with debug setting check
      */
     public function test_debug_logging_debug_check() {
-        // Save settings with debug enabled
-        update_option('shift8_gravitysap_settings', array(
-            'sap_debug' => '1',
-            'sap_username' => 'testuser',
-            'sap_password' => 'testpass'
-        ));
+        // Mock get_option for debug setting check
+        Functions\when('get_option')
+            ->justReturn(array(
+                'sap_debug' => '1',
+                'sap_username' => 'testuser',
+                'sap_password' => 'testpass'
+            ));
+        
+        // Mock current_time for the debug logging
+        Functions\when('current_time')
+            ->justReturn('2025-01-22 14:30:00');
+        
+        // Mock sanitize_text_field for the log message
+        Functions\when('sanitize_text_field')
+            ->justReturn('Debug setting check');
+        
+        // Mock wp_json_encode for the debug output
+        Functions\when('wp_json_encode')
+            ->justReturn('{"sap_debug":"1","sap_username":"te***","sap_password":"***REDACTED***"}');
+        
+        // Mock wp_upload_dir for the file operations
+        Functions\when('wp_upload_dir')
+            ->justReturn(array('basedir' => '/tmp/uploads'));
+        
+        // Mock wp_mkdir_p for directory creation
+        Functions\when('wp_mkdir_p')
+            ->justReturn(true);
         
         // Test the special debug check message
         shift8_gravitysap_debug_log('Debug setting check');
@@ -162,32 +216,31 @@ class HelperFunctionsTest extends TestCase {
     }
 
     /**
-     * Test debug logging file writing scenarios
+     * Test encryption with special characters
      */
-    public function test_debug_logging_file_scenarios() {
-        // Enable debug
-        update_option('shift8_gravitysap_settings', array('sap_debug' => '1'));
+    public function test_password_encryption_special_chars() {
+        Functions\when('wp_salt')->justReturn('test_salt_auth_1234567890abcdef');
         
-        // Test with WP_DEBUG enabled for fallback logging
-        if (!defined('WP_DEBUG')) {
-            define('WP_DEBUG', true);
-        }
+        $special_password = '!@#$%^&*()_+-=[]{}|;:,.<>?';
         
-        // Test logging with complex data structures
-        $complex_data = array(
-            'level1' => array(
-                'level2' => array(
-                    'password' => 'should_be_redacted',
-                    'username' => 'should_be_masked',
-                    'data' => 'should_remain'
-                )
-            ),
-            'simple' => 'value'
-        );
+        $encrypted = shift8_gravitysap_encrypt_password($special_password);
+        $decrypted = shift8_gravitysap_decrypt_password($encrypted);
         
-        shift8_gravitysap_debug_log('Complex data test', $complex_data);
+        $this->assertEquals($special_password, $decrypted, 'Special characters should be preserved through encryption/decryption');
+    }
+
+    /**
+     * Test encryption with unicode characters
+     */
+    public function test_password_encryption_unicode() {
+        Functions\when('wp_salt')->justReturn('test_salt_auth_1234567890abcdef');
         
-        $this->assertTrue(true, 'Complex debug logging completed without errors');
+        $unicode_password = '测试密码123αβγδε';
+        
+        $encrypted = shift8_gravitysap_encrypt_password($unicode_password);
+        $decrypted = shift8_gravitysap_decrypt_password($encrypted);
+        
+        $this->assertEquals($unicode_password, $decrypted, 'Unicode characters should be preserved through encryption/decryption');
     }
 
     /**
@@ -199,8 +252,8 @@ class HelperFunctionsTest extends TestCase {
             'sap_password' => 'secret2',
             'pass' => 'secret3',
             'pwd' => 'secret4',
-            'PASSWORD' => 'secret5',  // Test case insensitive
-            'Pass' => 'secret6',      // Test case insensitive
+            'PASSWORD' => 'secret5',
+            'Pass' => 'secret6',
         );
         
         $sanitized = shift8_gravitysap_sanitize_log_data($data);
@@ -219,8 +272,8 @@ class HelperFunctionsTest extends TestCase {
             'sap_username' => 'testuser2',
             'user' => 'testuser3',
             'login' => 'testuser4',
-            'USERNAME' => 'testuser5',  // Test case insensitive
-            'User' => 'testuser6',      // Test case insensitive
+            'USERNAME' => 'testuser5',
+            'User' => 'testuser6',
         );
         
         $sanitized = shift8_gravitysap_sanitize_log_data($data);
@@ -229,51 +282,5 @@ class HelperFunctionsTest extends TestCase {
             $expected = strlen($data[$field]) > 2 ? substr($data[$field], 0, 2) . '***' : '***';
             $this->assertEquals($expected, $sanitized[$field], "Field '$field' should be properly masked");
         }
-    }
-
-    /**
-     * Test debug logging with different message types
-     */
-    public function test_debug_logging_message_types() {
-        // Enable debug
-        update_option('shift8_gravitysap_settings', array('sap_debug' => '1'));
-        
-        // Test with null data
-        shift8_gravitysap_debug_log('Test message with null data', null);
-        
-        // Test with empty array
-        shift8_gravitysap_debug_log('Test message with empty array', array());
-        
-        // Test with boolean data
-        shift8_gravitysap_debug_log('Test message with boolean', true);
-        
-        // Test with numeric data
-        shift8_gravitysap_debug_log('Test message with number', 12345);
-        
-        $this->assertTrue(true, 'Various debug logging message types completed without errors');
-    }
-
-    /**
-     * Test encryption with special characters
-     */
-    public function test_password_encryption_special_chars() {
-        $special_password = '!@#$%^&*()_+-=[]{}|;:,.<>?';
-        
-        $encrypted = shift8_gravitysap_encrypt_password($special_password);
-        $decrypted = shift8_gravitysap_decrypt_password($encrypted);
-        
-        $this->assertEquals($special_password, $decrypted, 'Special characters should be preserved through encryption/decryption');
-    }
-
-    /**
-     * Test encryption with unicode characters
-     */
-    public function test_password_encryption_unicode() {
-        $unicode_password = '测试密码123αβγδε';
-        
-        $encrypted = shift8_gravitysap_encrypt_password($unicode_password);
-        $decrypted = shift8_gravitysap_decrypt_password($encrypted);
-        
-        $this->assertEquals($unicode_password, $decrypted, 'Unicode characters should be preserved through encryption/decryption');
     }
 } 

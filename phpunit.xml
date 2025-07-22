@@ -1,14 +1,13 @@
 <?xml version="1.0"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
-         bootstrap="tests/bootstrap-brain-monkey.php"
+         bootstrap="tests/bootstrap.php"
          executionOrder="depends,defects"
          failOnRisky="true"
          failOnWarning="true">
     <testsuites>
-        <testsuite name="brain-monkey">
-            <file>tests/unit/BrainMonkeyHelperFunctionsTest.php</file>
-            <file>tests/unit/BrainMonkeyMainPluginTest.php</file>
+        <testsuite name="unit">
+            <directory>tests/unit</directory>
         </testsuite>
     </testsuites>
     <coverage processUncoveredFiles="true">

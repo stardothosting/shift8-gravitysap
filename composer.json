@@ -33,13 +33,12 @@
         }
     },
     "scripts": {
-        "test": "phpunit --configuration phpunit-brain-monkey.xml --testdox",
-        "test:unit": "phpunit --configuration phpunit-brain-monkey.xml --testdox",
-        "test:legacy": "phpunit --configuration phpunit-simple.xml --testdox",
+        "test": "phpunit --testdox",
+        "test:unit": "phpunit --testsuite=unit --testdox",
         "test:integration": "phpunit --testsuite=integration", 
         "test:acceptance": "phpunit --testsuite=acceptance",
-        "test:coverage": "phpunit --configuration phpunit-brain-monkey.xml --coverage-text",
-        "test:coverage-html": "phpunit --configuration phpunit-brain-monkey.xml --coverage-html tests/coverage/html",
+        "test:coverage": "phpunit --coverage-text",
+        "test:coverage-html": "phpunit --coverage-html tests/coverage/html",
         "cs:check": "phpcs",
         "cs:fix": "phpcbf",
         "analyze": "psalm --show-info=true"
