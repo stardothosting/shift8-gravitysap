@@ -1,6 +1,6 @@
 # Shift8 Integration for Gravity Forms and SAP Business One
 
-![WordPress Plugin Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
+![WordPress Plugin Version](https://img.shields.io/badge/version-1.1.2-blue.svg)
 ![WordPress Compatibility](https://img.shields.io/badge/WordPress-5.0%2B-green.svg)
 ![PHP Compatibility](https://img.shields.io/badge/PHP-7.4%2B-purple.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-red.svg)
