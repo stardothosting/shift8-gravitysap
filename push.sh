@@ -14,7 +14,7 @@ git push origin main
 # rsync to svn
 # NOTE: removed the mkdir/rsync into tags/$2 to avoid svn cp conflict
 rsync -ravzp --exclude-from './push.exclude' ./ ./svn/trunk
-rsync -ravzp ../wordpress-org-assets/ ./svn/assets
+rsync -ravzp ./assets/ ./svn/assets
 
 cd svn
 svn --username shift8 add trunk/*
