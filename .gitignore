@@ -53,3 +53,5 @@ Thumbs.db
 /vendor
 .phpunit*
 /assets
+/svn
+svn/
