@@ -1,0 +1,153 @@
+/* Shift8 Gravity SAP Admin Styles */
+
+.shift8-gravitysap-admin {
+    margin-top: 20px;
+}
+
+.shift8-gravitysap-main {
+    max-width: 800px;
+}
+
+.shift8-gravitysap-sidebar .postbox {
+    margin-bottom: 20px;
+}
+
+.shift8-status-good {
+    color: #46b450;
+    font-weight: bold;
+}
+
+.shift8-status-error {
+    color: #dc3232;
+    font-weight: bold;
+}
+
+#connection-result {
+    margin-left: 10px;
+    padding: 5px 10px;
+    border-radius: 3px;
+}
+
+#connection-result.success {
+    background-color: #dff0d8;
+    color: #3c763d;
+}
+
+#connection-result.error {
+    background-color: #f2dede;
+    color: #a94442;
+}
+
+/* Log viewer styles */
+#log-viewer {
+    margin-top: 10px;
+}
+
+#log-viewer textarea {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 10px;
+    background: #f8f8f8;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* Form table styles */
+.form-table th {
+    width: 200px;
+}
+
+.form-table td {
+    padding: 15px 10px;
+}
+
+.form-table input[type="text"],
+.form-table input[type="url"],
+.form-table input[type="password"] {
+    width: 100%;
+    max-width: 400px;
+}
+
+/* Description text */
+.form-table .description {
+    margin-top: 5px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Button styles */
+.button-secondary {
+    margin-right: 10px;
+}
+
+/* Notice styles */
+.notice {
+    margin: 15px 0;
+    padding: 10px 15px;
+    border-left: 4px solid #fff;
+}
+
+.notice-success {
+    border-left-color: #46b450;
+}
+
+.notice-error {
+    border-left-color: #dc3232;
+}
+
+.notice-warning {
+    border-left-color: #ffb900;
+}
+
+/* Field mapping table improvements */
+.widefat th:nth-child(3),
+.widefat td:nth-child(3) {
+    width: 150px;
+    font-size: 11px;
+}
+
+.sap-field-required {
+    color: #dc3232;
+    font-weight: bold;
+}
+
+.sap-field-limits {
+    color: #666;
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.sap-validation-message {
+    font-style: italic;
+    color: #0073aa;
+}
+
+/* Form validation styling */
+.gfield_validation_message {
+    background-color: #ffebe8;
+    border: 1px solid #c00;
+    border-radius: 3px;
+    padding: 6px 8px;
+    margin-top: 6px;
+}
+
+/* Responsive styles */
+@media screen and (max-width: 782px) {
+    .shift8-gravitysap-admin {
+        grid-template-columns: 1fr;
+    }
+
+    .form-table th {
+        width: auto;
+    }
+
+    .form-table td {
+        padding: 10px 0;
+    }
+    
+    .widefat th:nth-child(3),
+    .widefat td:nth-child(3) {
+        width: auto;
+    }
+} 
