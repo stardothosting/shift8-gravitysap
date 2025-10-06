@@ -42,9 +42,13 @@ class SAPServiceTest extends TestCase {
         Functions\when('esc_html')->alias(function($text) { return htmlspecialchars($text); });
         Functions\when('esc_url_raw')->alias(function($url) { return filter_var($url, FILTER_SANITIZE_URL); });
         Functions\when('get_option')->justReturn('0'); // Mock debug setting as disabled by default
+        Functions\when('get_transient')->justReturn(false); // Mock transient as not cached by default
+        Functions\when('set_transient')->justReturn(true); // Mock transient setting
+        Functions\when('delete_transient')->justReturn(true); // Mock transient deletion
         Functions\when('shift8_gravitysap_debug_log')->justReturn(true); // Mock debug logging
         Functions\when('shift8_gravitysap_decrypt_password')->justReturn('decrypted_password');
         Functions\when('shift8_gravitysap_encrypt_password')->justReturn('encrypted_password');
+        Functions\when('rgar')->alias(function($array, $key, $default = '') { return isset($array[$key]) ? $array[$key] : $default; });
         
         // Include the SAP Service class
         require_once dirname(dirname(__DIR__)) . '/includes/class-shift8-gravitysap-sap-service.php';

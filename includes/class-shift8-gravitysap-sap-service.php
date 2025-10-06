@@ -139,23 +139,37 @@ class Shift8_GravitySAP_SAP_Service {
             throw new Exception('CardType is required for Business Partner creation');
         }
 
-        // Check available numbering series before attempting creation
-        $available_series = $this->get_available_numbering_series();
-        shift8_gravitysap_debug_log('Available numbering series', array('series' => $available_series));
+        // Get cached numbering series configuration
+        $series_config = $this->get_cached_numbering_series_config();
+        shift8_gravitysap_debug_log('Numbering series configuration', array('config' => $series_config));
         
         // Ensure CardType is set correctly
         if (!isset($business_partner_data['CardType'])) {
             $business_partner_data['CardType'] = 'cCustomer';
         }
         
+        // Handle CardCode prefix if specified
+        $card_code_prefix = rgar($business_partner_data, 'CardCodePrefix', '');
+        unset($business_partner_data['CardCodePrefix']); // Remove from data sent to SAP
+        
         // Remove any Series or CardCode to let SAP auto-generate
         unset($business_partner_data['Series']);
         unset($business_partner_data['CardCode']);
         
-        // If we have available series, use the first one
-        if (!empty($available_series)) {
-            $business_partner_data['Series'] = $available_series[0];
-            shift8_gravitysap_debug_log('Using numbering series', array('series' => $available_series[0]));
+        // Set the appropriate Series based on the selected prefix
+        if (!empty($card_code_prefix) && isset($series_config['series_map'][$card_code_prefix])) {
+            $series_id = $series_config['series_map'][$card_code_prefix];
+            $business_partner_data['Series'] = $series_id;
+            shift8_gravitysap_debug_log('Using numbering series for prefix', array(
+                'prefix' => $card_code_prefix,
+                'series_id' => $series_id,
+                'series_name' => $series_config['prefixes'][$card_code_prefix]
+            ));
+        } elseif (!empty($series_config['fallback_series'])) {
+            $business_partner_data['Series'] = $series_config['fallback_series'];
+            shift8_gravitysap_debug_log('Using fallback numbering series', array('series_id' => $series_config['fallback_series']));
+        } else {
+            shift8_gravitysap_debug_log('No specific series found - letting SAP auto-assign');
         }
         
         shift8_gravitysap_debug_log('Creating Business Partner with full data', $business_partner_data);
@@ -189,8 +203,7 @@ class Shift8_GravitySAP_SAP_Service {
             
             shift8_gravitysap_debug_log('Business Partner creation failed', array(
                 'status_code' => $response_code,
-                'response_body' => $body,
-                'available_series' => $available_series
+                'response_body' => $body
             ));
             
             $error_message = 'Unknown error';
@@ -208,11 +221,7 @@ class Shift8_GravitySAP_SAP_Service {
                 $help_message .= "5. Set the series as Primary or Default\n";
                 $help_message .= "6. Save the configuration\n\n";
                 
-                if (empty($available_series)) {
-                    $help_message .= "STATUS: No numbering series found for Business Partners.\n";
-                } else {
-                    $help_message .= "STATUS: Found series (" . implode(', ', $available_series) . ") but creation still failed.\n";
-                }
+                $help_message .= "STATUS: Check your SAP numbering series configuration for Business Partners.\n";
                 
                 $error_message .= $help_message;
             }
@@ -750,5 +759,140 @@ class Shift8_GravitySAP_SAP_Service {
                 )
             );
         }
+    }
+    
+    /**
+     * Get and cache SAP numbering series configuration for Business Partners
+     */
+    public function get_cached_numbering_series_config() {
+        // Check if we have cached configuration
+        $cache_key = 'shift8_gravitysap_numbering_series_config';
+        $cached_config = get_transient($cache_key);
+        
+        if ($cached_config !== false) {
+            shift8_gravitysap_debug_log('Using cached numbering series configuration', $cached_config);
+            return $cached_config;
+        }
+        
+        // No cache, query SAP
+        shift8_gravitysap_debug_log('No cached numbering series config found, querying SAP');
+        $config = $this->query_numbering_series_config();
+        
+        // Cache for 24 hours
+        set_transient($cache_key, $config, 24 * 60 * 60);
+        shift8_gravitysap_debug_log('Cached numbering series configuration', $config);
+        
+        return $config;
+    }
+    
+    /**
+     * Query SAP for numbering series configuration
+     */
+    private function query_numbering_series_config() {
+        try {
+            // Ensure we have a valid session
+            if (!$this->ensure_authenticated()) {
+                throw new Exception('Failed to authenticate with SAP');
+            }
+            
+            $config = array(
+                'prefixes' => array(),
+                'series_map' => array(),
+                'fallback_series' => null
+            );
+            
+            // Query numbering series for Business Partners (ObjectCode = 2)
+            $response = $this->make_request('GET', "/SeriesService_GetDocumentSeries?\$filter=ObjectCode eq '2'");
+            
+            if (is_wp_error($response)) {
+                shift8_gravitysap_debug_log('Failed to query numbering series', array('error' => $response->get_error_message()));
+                return $this->get_fallback_series_config();
+            }
+            
+            $response_code = wp_remote_retrieve_response_code($response);
+            if ($response_code === 200) {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                
+                if (!empty($data['value'])) {
+                    foreach ($data['value'] as $series) {
+                        $series_id = $series['Series'] ?? null;
+                        $series_name = $series['SeriesName'] ?? $series['Name'] ?? '';
+                        $is_default = $series['DefaultSeries'] ?? false;
+                        
+                        if ($series_id && $series_name) {
+                            // Extract prefix from series name (e.g., "D - Distributor" -> "D")
+                            $prefix = $this->extract_prefix_from_series_name($series_name);
+                            
+                            if ($prefix) {
+                                $config['prefixes'][$prefix] = $series_name;
+                                $config['series_map'][$prefix] = $series_id;
+                                
+                                if ($is_default) {
+                                    $config['fallback_series'] = $series_id;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If no series found, use fallback
+            if (empty($config['prefixes'])) {
+                shift8_gravitysap_debug_log('No numbering series found, using fallback configuration');
+                return $this->get_fallback_series_config();
+            }
+            
+            shift8_gravitysap_debug_log('Successfully queried numbering series configuration', $config);
+            return $config;
+            
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Exception querying numbering series: ' . $e->getMessage());
+            return $this->get_fallback_series_config();
+        }
+    }
+    
+    /**
+     * Extract prefix from series name
+     */
+    private function extract_prefix_from_series_name($series_name) {
+        // Try to extract prefix from series name patterns like:
+        // "D - Distributor", "E - EndUser", "O - OEM", etc.
+        if (preg_match('/^([A-Z])\s*[-–]\s*(.+)/i', $series_name, $matches)) {
+            return strtoupper($matches[1]);
+        }
+        
+        // Fallback: if series name is just a single letter
+        if (preg_match('/^([A-Z])$/i', trim($series_name), $matches)) {
+            return strtoupper($matches[1]);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get fallback series configuration when SAP query fails
+     */
+    private function get_fallback_series_config() {
+        return array(
+            'prefixes' => array(
+                'D' => 'D - Distributor',
+                'E' => 'E - EndUser', 
+                'O' => 'O - OEM',
+                'M' => 'M - Manual'
+            ),
+            'series_map' => array(),
+            'fallback_series' => null,
+            'is_fallback' => true
+        );
+    }
+    
+    /**
+     * Clear cached numbering series configuration
+     */
+    public function clear_numbering_series_cache() {
+        $cache_key = 'shift8_gravitysap_numbering_series_config';
+        delete_transient($cache_key);
+        shift8_gravitysap_debug_log('Cleared numbering series configuration cache');
     }
 } 

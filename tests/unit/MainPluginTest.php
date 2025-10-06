@@ -38,6 +38,11 @@ class MainPluginTest extends TestCase {
         Functions\when('plugin_dir_path')->justReturn('/test/plugin/path/');
         Functions\when('plugin_dir_url')->justReturn('http://example.com/wp-content/plugins/test-plugin/');
         Functions\when('plugin_basename')->justReturn('test-plugin/test-plugin.php');
+        Functions\when('get_option')->justReturn('0'); // Mock debug setting as disabled by default
+        Functions\when('get_transient')->justReturn(false); // Mock transient as not cached by default
+        Functions\when('set_transient')->justReturn(true); // Mock transient setting
+        Functions\when('delete_transient')->justReturn(true); // Mock transient deletion
+        Functions\when('rgar')->alias(function($array, $key, $default = '') { return isset($array[$key]) ? $array[$key] : $default; });
         
         // Get plugin instance
         $this->plugin = \Shift8_GravitySAP::get_instance();
@@ -172,12 +177,6 @@ class MainPluginTest extends TestCase {
      * Test form settings saving with valid data
      */
     public function test_save_form_settings_valid_data() {
-        // Mock get_option for debug logging
-        Functions\expect('get_option')
-            ->once()
-            ->with('shift8_gravitysap_settings', array())
-            ->andReturn(array('sap_debug' => '0'));
-        
         // Mock rgget and rgpost functions
         Functions\when('rgget')->alias(function($name, $array = null) {
             $data = array('subview' => 'sap_integration');
