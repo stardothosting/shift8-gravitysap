@@ -37,8 +37,6 @@ class Shift8_GravitySAP_Admin {
         
         // AJAX handlers with proper security
         add_action('wp_ajax_shift8_gravitysap_test_connection', array($this, 'ajax_test_connection'));
-        add_action('wp_ajax_shift8_gravitysap_get_custom_logs', array($this, 'ajax_get_custom_logs'));
-        add_action('wp_ajax_shift8_gravitysap_clear_custom_log', array($this, 'ajax_clear_custom_log'));
     }
 
     /**
@@ -114,7 +112,7 @@ class Shift8_GravitySAP_Admin {
      * @since 1.0.0
      */
     public function render_settings_page() {
-        // Verify user capabilities
+        // Verify user capabilities - require administrator capability for SAP credentials
         if (!current_user_can('manage_options')) {
             wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-gravity-forms-sap-b1-integration'));
         }
@@ -131,7 +129,8 @@ class Shift8_GravitySAP_Admin {
             'sap_company_db' => '',
             'sap_username' => '',
             'sap_password' => '',
-            'sap_debug' => '0'
+            'sap_debug' => '0',
+            'sap_ssl_verify' => '0'
         ));
 
         // Include settings template
@@ -155,99 +154,22 @@ class Shift8_GravitySAP_Admin {
     /**
      * Register settings
      *
-     * Registers plugin settings with WordPress settings API for proper
-     * validation and sanitization.
+     * NOTE: We use a custom form handler instead of WordPress Settings API
+     * to avoid conflicts with checkbox handling. Settings are saved via save_settings().
      *
      * @since 1.0.0
      */
     public function register_settings() {
-        register_setting(
-            'shift8_gravitysap_settings',
-            'shift8_gravitysap_settings',
-            array(
-                'sanitize_callback' => array($this, 'sanitize_settings'),
-                'default' => array(
-                    'sap_endpoint' => '',
-                    'sap_company_db' => '',
-                    'sap_username' => '',
-                    'sap_password' => '',
-                    'sap_debug' => '0'
-                )
-            )
-        );
+        // Intentionally empty - we handle saves manually in save_settings()
     }
 
     /**
-     * Sanitize settings
-     *
-     * Validates and sanitizes all plugin settings before saving.
-     *
-     * @since 1.0.0
-     * @param array $input Raw input data
-     * @return array Sanitized settings
-     */
-    public function sanitize_settings($input) {
-        $sanitized = array();
-        
-        // Sanitize endpoint URL
-        if (isset($input['sap_endpoint'])) {
-            $sanitized['sap_endpoint'] = esc_url_raw(trim($input['sap_endpoint']));
-            
-            // Validate URL format
-            if (!empty($sanitized['sap_endpoint']) && !filter_var($sanitized['sap_endpoint'], FILTER_VALIDATE_URL)) {
-                add_settings_error(
-                    'shift8_gravitysap_settings',
-                    'invalid_endpoint',
-                    esc_html__('Please enter a valid SAP Service Layer endpoint URL.', 'shift8-gravity-forms-sap-b1-integration')
-                );
-                $sanitized['sap_endpoint'] = '';
-            }
-        }
-        
-        // Sanitize company database
-        if (isset($input['sap_company_db'])) {
-            $sanitized['sap_company_db'] = sanitize_text_field(trim($input['sap_company_db']));
-        }
-        
-        // Sanitize username
-        if (isset($input['sap_username'])) {
-            $sanitized['sap_username'] = sanitize_user(trim($input['sap_username']));
-        }
-        
-        // Handle password with encryption
-        if (isset($input['sap_password'])) {
-            $password = trim($input['sap_password']);
-            if (!empty($password)) {
-                $sanitized['sap_password'] = shift8_gravitysap_encrypt_password($password);
-            } else {
-                // Keep existing password if new one is empty
-                $existing_settings = get_option('shift8_gravitysap_settings', array());
-                $sanitized['sap_password'] = isset($existing_settings['sap_password']) ? $existing_settings['sap_password'] : '';
-            }
-        }
-        
-        // Sanitize debug setting
-        $sanitized['sap_debug'] = isset($input['sap_debug']) ? '1' : '0';
-        
-        shift8_gravitysap_debug_log('Settings saved', array(
-            'endpoint_set' => !empty($sanitized['sap_endpoint']),
-            'company_db_set' => !empty($sanitized['sap_company_db']),
-            'username_set' => !empty($sanitized['sap_username']),
-            'password_set' => !empty($sanitized['sap_password']),
-            'debug_enabled' => $sanitized['sap_debug']
-        ));
-        
-        return $sanitized;
-    }
-
-    /**
-     * Save settings (legacy method)
+     * Save settings
      *
      * Handles direct POST submission with nonce verification.
-     * This is kept for backward compatibility.
+     * All settings are sanitized and validated before saving.
      *
      * @since 1.0.0
-     * @deprecated Use sanitize_settings instead
      */
     private function save_settings() {
         // Verify nonce
@@ -255,25 +177,42 @@ class Shift8_GravitySAP_Admin {
             wp_die(esc_html__('Security check failed. Please try again.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
-        // Prepare settings array
-        $settings = array(
-            'sap_endpoint' => isset($_POST['sap_endpoint']) ? esc_url_raw(trim(sanitize_text_field(wp_unslash($_POST['sap_endpoint'])))) : '',
-            'sap_company_db' => isset($_POST['sap_company_db']) ? sanitize_text_field(trim(sanitize_text_field(wp_unslash($_POST['sap_company_db'])))) : '',
-            'sap_username' => isset($_POST['sap_username']) ? sanitize_user(trim(sanitize_text_field(wp_unslash($_POST['sap_username'])))) : '',
-            'sap_debug' => isset($_POST['sap_debug']) ? '1' : '0'
-        );
+        shift8_gravitysap_debug_log('Settings save initiated', array(
+            'has_endpoint' => isset($_POST['sap_endpoint']),
+            'has_company_db' => isset($_POST['sap_company_db']),
+            'has_username' => isset($_POST['sap_username']),
+            'has_password' => isset($_POST['sap_password']) && !empty($_POST['sap_password']),
+            'debug_enabled' => isset($_POST['sap_debug']),
+            'ssl_verify_enabled' => isset($_POST['sap_ssl_verify'])
+        ));
+        
+        // Get existing settings first, then update only changed fields
+        $settings = get_option('shift8_gravitysap_settings', array());
+        
+        // Update settings from form
+        $settings['sap_endpoint'] = isset($_POST['sap_endpoint']) ? esc_url_raw(trim(sanitize_text_field(wp_unslash($_POST['sap_endpoint'])))) : '';
+        $settings['sap_company_db'] = isset($_POST['sap_company_db']) ? sanitize_text_field(trim(sanitize_text_field(wp_unslash($_POST['sap_company_db'])))) : '';
+        $settings['sap_username'] = isset($_POST['sap_username']) ? sanitize_user(trim(sanitize_text_field(wp_unslash($_POST['sap_username'])))) : '';
+        $settings['sap_debug'] = isset($_POST['sap_debug']) ? '1' : '0';
+        $settings['sap_ssl_verify'] = isset($_POST['sap_ssl_verify']) ? '1' : '0';
         
         // Handle password encryption
         if (!empty($_POST['sap_password'])) {
             $settings['sap_password'] = shift8_gravitysap_encrypt_password(trim(sanitize_text_field(wp_unslash($_POST['sap_password']))));
-        } else {
-            // Keep existing password if new one is empty
-            $existing_settings = get_option('shift8_gravitysap_settings', array());
-            $settings['sap_password'] = isset($existing_settings['sap_password']) ? $existing_settings['sap_password'] : '';
         }
+        // If password is empty, keep the existing one (already in $settings from get_option)
         
         // Update settings
         update_option('shift8_gravitysap_settings', $settings);
+        
+        shift8_gravitysap_debug_log('Settings saved successfully', array(
+            'endpoint_set' => !empty($settings['sap_endpoint']),
+            'company_db_set' => !empty($settings['sap_company_db']),
+            'username_set' => !empty($settings['sap_username']),
+            'password_set' => !empty($settings['sap_password']),
+            'debug_enabled' => $settings['sap_debug'] === '1',
+            'ssl_verify_enabled' => $settings['sap_ssl_verify'] === '1'
+        ));
         
         // Show success message
         add_settings_error(
@@ -392,180 +331,4 @@ class Shift8_GravitySAP_Admin {
         }
     }
 
-    /**
-     * AJAX handler for getting custom logs
-     *
-     * Retrieves recent log entries with proper security validation.
-     *
-     * @since 1.0.0
-     */
-    public function ajax_get_custom_logs() {
-        // Verify nonce and capabilities
-        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
-            wp_send_json_error(array(
-                'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
-            ));
-        }
-        
-        try {
-            $upload_dir = wp_upload_dir();
-            $log_file = $upload_dir['basedir'] . '/shift8-gravitysap-debug.log';
-            
-            if (!file_exists($log_file)) {
-                wp_send_json_success(array(
-                    'logs' => array(esc_html__('No log file found.', 'shift8-gravity-forms-sap-b1-integration')),
-                    'log_size' => '0 B'
-                ));
-                return;
-            }
-            
-            // Get file size
-            $file_size = $this->format_file_size(filesize($log_file));
-            
-            // Read last 100 lines of log file
-            $lines = $this->get_last_lines($log_file, 100);
-            
-            wp_send_json_success(array(
-                'logs' => $lines,
-                'log_size' => $file_size
-            ));
-            
-        } catch (Exception $e) {
-            wp_send_json_error(array(
-                'message' => esc_html($e->getMessage())
-            ));
-        }
-    }
-
-    /**
-     * AJAX handler for clearing custom logs
-     *
-     * Clears the debug log file with proper security validation.
-     *
-     * @since 1.0.0
-     */
-    public function ajax_clear_custom_log() {
-        // Verify nonce and capabilities
-        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'shift8_gravitysap_nonce') || !current_user_can('manage_options')) {
-            wp_send_json_error(array(
-                'message' => esc_html__('Security check failed.', 'shift8-gravity-forms-sap-b1-integration')
-            ));
-        }
-        
-        try {
-            $upload_dir = wp_upload_dir();
-            $log_file = $upload_dir['basedir'] . '/shift8-gravitysap-debug.log';
-            
-            if (file_exists($log_file)) {
-                if (wp_delete_file($log_file)) {
-                    shift8_gravitysap_debug_log('Debug log cleared by user');
-                    wp_send_json_success(array(
-                        'message' => esc_html__('Log file cleared successfully.', 'shift8-gravity-forms-sap-b1-integration')
-                    ));
-                } else {
-                    wp_send_json_error(array(
-                        'message' => esc_html__('Failed to clear log file.', 'shift8-gravity-forms-sap-b1-integration')
-                    ));
-                }
-            } else {
-                wp_send_json_success(array(
-                    'message' => esc_html__('Log file does not exist.', 'shift8-gravity-forms-sap-b1-integration')
-                ));
-            }
-            
-        } catch (Exception $e) {
-            wp_send_json_error(array(
-                'message' => esc_html($e->getMessage())
-            ));
-        }
-    }
-
-    /**
-     * Get last N lines from a file
-     *
-     * Efficiently reads the last N lines from a file without loading
-     * the entire file into memory.
-     *
-     * @since 1.0.0
-     * @param string $file_path Path to the file
-     * @param int    $lines     Number of lines to retrieve
-     * @return array Array of lines
-     */
-    private function get_last_lines($file_path, $lines = 100) {
-        if (!file_exists($file_path) || !is_readable($file_path)) {
-            return array();
-        }
-        
-        $file = file($file_path);
-        if ($file === false) {
-            return array();
-        }
-        
-        // Get last N lines
-        $total_lines = count($file);
-        $start = max(0, $total_lines - $lines);
-        $result = array_slice($file, $start);
-        
-        // Remove trailing newlines and sanitize
-        return array_map(function($line) {
-            return esc_html(rtrim($line, "\r\n"));
-        }, $result);
-    }
-
-    /**
-     * Format file size in human readable format
-     *
-     * @since 1.0.0
-     * @param int $size File size in bytes
-     * @return string Formatted file size
-     */
-    private function format_file_size($size) {
-        $units = array('B', 'KB', 'MB', 'GB');
-        $power = $size > 0 ? floor(log($size, 1024)) : 0;
-        $power = min($power, count($units) - 1);
-        
-        return round($size / pow(1024, $power), 2) . ' ' . $units[$power];
-    }
-
-    /**
-     * Get log file path
-     *
-     * @since 1.0.0
-     * @return string Log file path
-     */
-    public static function get_log_file_path() {
-        $upload_dir = wp_upload_dir();
-        return $upload_dir['basedir'] . '/shift8-gravitysap-debug.log';
-    }
-
-    /**
-     * Get log file size
-     *
-     * @since 1.0.0
-     * @return string Formatted file size
-     */
-    public static function get_log_file_size() {
-        $log_file = self::get_log_file_path();
-        if (!file_exists($log_file)) {
-            return '0 B';
-        }
-        
-        $size = filesize($log_file);
-        $units = array('B', 'KB', 'MB', 'GB');
-        $power = $size > 0 ? floor(log($size, 1024)) : 0;
-        $power = min($power, count($units) - 1);
-        
-        return round($size / pow(1024, $power), 2) . ' ' . $units[$power];
-    }
-
-    /**
-     * Get log file URL for download
-     *
-     * @since 1.0.0
-     * @return string Log file URL
-     */
-    public static function get_log_file_url() {
-        $upload_dir = wp_upload_dir();
-        return $upload_dir['baseurl'] . '/shift8-gravitysap-debug.log';
-    }
 } 

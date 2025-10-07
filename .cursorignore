@@ -1,0 +1,11 @@
+# SVN directory - automated deployment only, do not modify
+svn/
+
+# Test coverage HTML reports
+tests/coverage/
+
+# Vendor dependencies
+vendor/
+
+# Node modules if any
+node_modules/

@@ -31,9 +31,9 @@ class Shift8_GravitySAP_SAP_Service {
     private $username;
 
     /**
-     * SAP Password
+     * SAP Password (encrypted)
      */
-    private $password;
+    private $encrypted_password;
 
     /**
      * Session ID for authenticated requests
@@ -48,15 +48,24 @@ class Shift8_GravitySAP_SAP_Service {
         $this->company_db = $settings['sap_company_db'];
         $this->username = $settings['sap_username'];
         
+        // Store encrypted password - decrypt only when needed
+        $this->encrypted_password = $settings['sap_password'];
+    }
+    
+    /**
+     * Get decrypted password on-demand
+     * 
+     * @return string Decrypted password
+     */
+    private function get_password() {
         // Handle both encrypted and decrypted passwords
         // If password looks encrypted (base64), decrypt it; otherwise use as-is
-        $password = $settings['sap_password'];
-        if (!empty($password) && base64_encode(base64_decode($password, true)) === $password) {
+        if (!empty($this->encrypted_password) && base64_encode(base64_decode($this->encrypted_password, true)) === $this->encrypted_password) {
             // Looks like base64 - try to decrypt
-            $this->password = shift8_gravitysap_decrypt_password($password);
+            return shift8_gravitysap_decrypt_password($this->encrypted_password);
         } else {
             // Use as-is (already decrypted by caller)
-            $this->password = $password;
+            return $this->encrypted_password;
         }
     }
 
@@ -259,7 +268,7 @@ class Shift8_GravitySAP_SAP_Service {
             'method' => $method,
             'headers' => $headers,
             'timeout' => 30,
-            'sslverify' => false // Skip SSL verification for testing
+            'sslverify' => apply_filters('shift8_gravitysap_sslverify', true) // Configurable SSL verification (default: enabled for security)
         );
 
         // Only add body if we have data
@@ -530,9 +539,9 @@ class Shift8_GravitySAP_SAP_Service {
      * Authenticate with SAP Service Layer
      */
     private function authenticate() {
-        // Use the password as-is (it should already be decrypted by the caller)
-        $password_to_use = $this->password;
-        shift8_gravitysap_debug_log('Using password as provided by caller (admin class handles decryption)');
+        // Decrypt password on-demand for authentication
+        $password_to_use = $this->get_password();
+        shift8_gravitysap_debug_log('Decrypting password on-demand for authentication');
 
         // Ensure all values are valid UTF-8 for JSON encoding
         $company_db_clean = mb_convert_encoding($this->company_db, 'UTF-8', 'UTF-8');
@@ -570,7 +579,7 @@ class Shift8_GravitySAP_SAP_Service {
                 'Content-Type' => 'application/json'
             ),
             'timeout' => 30,
-            'sslverify' => false
+            'sslverify' => apply_filters('shift8_gravitysap_sslverify', true)
         );
 
         // Only add body if we have data (same pattern as make_request method)
@@ -718,7 +727,7 @@ class Shift8_GravitySAP_SAP_Service {
             '        "Content-Type" => "application/json",' . "\n" .
             '        "Accept" => "application/json"' . "\n" .
             '    ),' . "\n" .
-            '    "sslverify" => false' . "\n" .
+            '    "sslverify" => true' . "\n" .
             ');' . "\n" .
             '$response = wp_remote_request($url, $args);' . "\n" .
             'if (is_wp_error($response)) {' . "\n" .
@@ -745,7 +754,7 @@ class Shift8_GravitySAP_SAP_Service {
             $login_data = array(
                 'CompanyDB' => $this->company_db,
                 'UserName' => $this->username,
-                'Password' => $this->password
+                'Password' => $this->get_password()
             );
 
             $args = array(
@@ -756,8 +765,7 @@ class Shift8_GravitySAP_SAP_Service {
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json'
                 ),
-                'sslverify' => false, // Equivalent to CURLOPT_SSL_VERIFYPEER => false
-                'sslcertificates' => '', // Equivalent to CURLOPT_SSL_VERIFYHOST => false
+                'sslverify' => apply_filters('shift8_gravitysap_sslverify', true)
             );
 
             shift8_gravitysap_debug_log('SAP HTTP Request URL: ' . $url);

@@ -46,6 +46,7 @@ class AdminInterfaceTest extends TestCase {
         Functions\when('esc_url_raw')->alias(function($url) { return filter_var($url, FILTER_SANITIZE_URL); });
         Functions\when('sanitize_text_field')->alias(function($text) { return htmlspecialchars(strip_tags($text)); });
         Functions\when('sanitize_user')->alias(function($user) { return htmlspecialchars(strip_tags($user)); });
+        Functions\when('wp_nonce_field')->justReturn('<input type="hidden" name="nonce" value="test_nonce" />');
         
         // Define constants that admin class needs
         if (!defined('SHIFT8_GRAVITYSAP_PLUGIN_DIR')) {
@@ -55,7 +56,7 @@ class AdminInterfaceTest extends TestCase {
             define('SHIFT8_GRAVITYSAP_PLUGIN_URL', 'http://example.com/wp-content/plugins/shift8-gravitysap/');
         }
             if (!defined('SHIFT8_GRAVITYSAP_VERSION')) {
-        define('SHIFT8_GRAVITYSAP_VERSION', '1.1.1');
+        define('SHIFT8_GRAVITYSAP_VERSION', '1.2.1');
         }
         
         // Include the admin class
@@ -121,74 +122,6 @@ class AdminInterfaceTest extends TestCase {
         $this->admin->register_settings();
         
         $this->assertTrue(true, 'Settings registered without errors');
-    }
-
-    /**
-     * Test settings sanitization with valid data
-     */
-    public function test_sanitize_settings_valid_data() {
-        // Mock WordPress functions for settings sanitization
-        Functions\when('add_settings_error')->justReturn(true);
-        Functions\when('get_option')->justReturn(array());
-        Functions\when('shift8_gravitysap_encrypt_password')->justReturn('encrypted_password');
-        
-        $input = array(
-            'sap_endpoint' => 'https://test-server:50000/b1s/v1',
-            'sap_company_db' => 'TEST_DB',
-            'sap_username' => 'test_user',
-            'sap_password' => 'test_password',
-            'sap_debug' => '1'
-        );
-        
-        $result = $this->admin->sanitize_settings($input);
-        
-        $this->assertEquals('https://test-server:50000/b1s/v1', $result['sap_endpoint']);
-        $this->assertEquals('TEST_DB', $result['sap_company_db']);
-        $this->assertEquals('test_user', $result['sap_username']);
-        $this->assertEquals('encrypted_password', $result['sap_password']);
-        $this->assertEquals('1', $result['sap_debug']);
-    }
-
-    /**
-     * Test settings sanitization with invalid URL
-     */
-    public function test_sanitize_settings_invalid_url() {
-        Functions\when('add_settings_error')->justReturn(true);
-        Functions\when('get_option')->justReturn(array());
-        Functions\when('shift8_gravitysap_encrypt_password')->justReturn('encrypted_password');
-        
-        $input = array(
-            'sap_endpoint' => 'not-a-valid-url',
-            'sap_company_db' => 'TEST_DB',
-            'sap_username' => 'test_user',
-            'sap_password' => 'test_password',
-            'sap_debug' => '0'
-        );
-        
-        $result = $this->admin->sanitize_settings($input);
-        
-        $this->assertEquals('', $result['sap_endpoint'], 'Invalid URL should be cleared');
-    }
-
-    /**
-     * Test settings sanitization with empty password (keeps existing)
-     */
-    public function test_sanitize_settings_empty_password() {
-        Functions\when('get_option')->justReturn(array(
-            'sap_password' => 'existing_encrypted_password'
-        ));
-        
-        $input = array(
-            'sap_endpoint' => 'https://test:50000/b1s/v1',
-            'sap_company_db' => 'TEST_DB',
-            'sap_username' => 'test_user',
-            'sap_password' => '', // Empty password
-            'sap_debug' => '0'
-        );
-        
-        $result = $this->admin->sanitize_settings($input);
-        
-        $this->assertEquals('existing_encrypted_password', $result['sap_password'], 'Should keep existing password when new one is empty');
     }
 
     /**
@@ -324,56 +257,6 @@ class AdminInterfaceTest extends TestCase {
     }
 
     /**
-     * Test AJAX get logs functionality
-     */
-    public function test_ajax_get_custom_logs() {
-        Functions\when('wp_verify_nonce')->justReturn(true);
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('wp_upload_dir')->justReturn(array(
-            'basedir' => '/tmp/test_uploads'
-        ));
-        Functions\when('file_exists')->justReturn(true);
-        Functions\when('filesize')->justReturn(1024);
-        Functions\when('sanitize_text_field')->alias(function($text) { return $text; });
-        Functions\when('wp_unslash')->alias(function($text) { return $text; });
-        
-        $_POST = array('nonce' => 'valid_nonce');
-        
-        try {
-            $this->admin->ajax_get_custom_logs();
-            $this->fail('Should have exited from wp_send_json_success');
-        } catch (\Exception $e) {
-            // This is expected behavior (wp_send_json_success calls exit)
-            $this->assertTrue(true, 'AJAX get logs completed');
-        }
-    }
-
-    /**
-     * Test AJAX clear logs functionality
-     */
-    public function test_ajax_clear_custom_log() {
-        Functions\when('wp_verify_nonce')->justReturn(true);
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('wp_upload_dir')->justReturn(array(
-            'basedir' => '/tmp/test_uploads'
-        ));
-        Functions\when('file_exists')->justReturn(true);
-        Functions\when('wp_delete_file')->justReturn(true);
-        Functions\when('sanitize_text_field')->alias(function($text) { return $text; });
-        Functions\when('wp_unslash')->alias(function($text) { return $text; });
-        
-        $_POST = array('nonce' => 'valid_nonce');
-        
-        try {
-            $this->admin->ajax_clear_custom_log();
-            $this->fail('Should have exited from wp_send_json_success');
-        } catch (\Exception $e) {
-            // This is expected behavior (wp_send_json_success calls exit)
-            $this->assertTrue(true, 'AJAX clear logs completed');
-        }
-    }
-
-    /**
      * Test main Shift8 settings page rendering
      */
     public function test_shift8_main_page() {
@@ -413,6 +296,7 @@ class AdminInterfaceTest extends TestCase {
         Functions\when('get_option')->justReturn(array());
         Functions\when('update_option')->justReturn(true);
         Functions\when('add_settings_error')->justReturn(true);
+        Functions\when('settings_errors')->justReturn(null);
         Functions\when('get_admin_page_title')->justReturn('Test Settings Page');
         Functions\when('settings_fields')->alias(function($group) { 
             echo '<input type="hidden" name="option_page" value="' . htmlspecialchars($group, ENT_QUOTES) . '" />';

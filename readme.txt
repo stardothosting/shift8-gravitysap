@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.2.0
+* Stable tag: 1.2.1
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -79,6 +79,16 @@ Common solutions:
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.2.1 =
+* **SECURITY: Fixed 7 critical security issues** - Enhanced input sanitization, nonce verification, and capability checks
+* **FIXED: SSL verification setting** - Now properly saves and persists checkbox state
+* **FIXED: Debug logging setting** - Checkbox state now saves correctly
+* **IMPROVED: Centralized logging** - All logging now uses `shift8_gravitysap_debug_log()` with proper WP_DEBUG integration
+* **IMPROVED: Password security** - SAP password now stored encrypted in memory and decrypted only when needed
+* **IMPROVED: Settings save mechanism** - Removed conflicting WordPress Settings API callback
+* **REMOVED: Custom log file management** - Now uses WordPress standard `error_log()` for better security
+* All tests passing: 85 tests with 205 assertions
 
 = 1.2.0 =
 * **NEW: Contact Person Support** - Map form fields to Contact Persons tab in SAP B1

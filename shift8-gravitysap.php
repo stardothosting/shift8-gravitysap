@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.2.0');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.2.1');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -66,23 +66,22 @@ function shift8_gravitysap_sanitize_log_data($data) {
 /**
  * Global debug logging function
  *
- * Checks if debug logging is enabled before logging. Automatically
- * sanitizes sensitive data to prevent credential exposure.
+ * Uses WordPress default error_log() for security. Requires both WP_DEBUG
+ * and user setting to be enabled. Automatically sanitizes sensitive data
+ * to prevent credential exposure.
  *
  * @since 1.0.0
  * @param string $message The log message
  * @param mixed  $data    Optional data to include in the log
  */
 function shift8_gravitysap_debug_log($message, $data = null) {
-    // Check if debug logging is enabled
-    $settings = get_option('shift8_gravitysap_settings', array());
-    
-    // Debug the debug setting itself (only if WP_DEBUG is enabled) - but sanitize sensitive data
-    if ($message === 'Debug setting check' && defined('WP_DEBUG') && WP_DEBUG) {
-        $sanitized_settings = shift8_gravitysap_sanitize_log_data($settings);
-        // Debug output removed for WordPress.org compliance
+    // SECURITY: Require WP_DEBUG to be enabled
+    if (!defined('WP_DEBUG') || !WP_DEBUG) {
+        return;
     }
     
+    // Check if user has enabled debug logging in plugin settings
+    $settings = get_option('shift8_gravitysap_settings', array());
     if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
         return;
     }
@@ -93,39 +92,14 @@ function shift8_gravitysap_debug_log($message, $data = null) {
     }
 
     // Format the log message
-    $timestamp = current_time('Y-m-d H:i:s');
-    $log_message = '[' . $timestamp . '] [Shift8 GravitySAP] ' . sanitize_text_field($message);
+    $log_message = '[Shift8 GravitySAP] ' . $message;
     if ($data !== null) {
         $log_message .= ' - Data: ' . wp_json_encode($data);
     }
-    $log_message .= PHP_EOL;
 
-    // Get WordPress uploads directory
-    $upload_dir = wp_upload_dir();
-    $log_file = $upload_dir['basedir'] . '/shift8-gravitysap-debug.log';
-
-    // Ensure the uploads directory exists and is writable
-    if (!is_dir($upload_dir['basedir'])) {
-        wp_mkdir_p($upload_dir['basedir']);
-    }
-
-    // Write to custom log file using WordPress file system
-    global $wp_filesystem;
-    if (empty($wp_filesystem)) {
-        require_once ABSPATH . '/wp-admin/includes/file.php';
-        WP_Filesystem();
-    }
-    
-    if ($wp_filesystem && $wp_filesystem->is_writable($upload_dir['basedir'])) {
-        if ($wp_filesystem->exists($log_file)) {
-            $existing_content = $wp_filesystem->get_contents($log_file);
-            $wp_filesystem->put_contents($log_file, $existing_content . $log_message, FS_CHMOD_FILE);
-        } else {
-            $wp_filesystem->put_contents($log_file, $log_message, FS_CHMOD_FILE);
-        }
-    } else {
-        // Fallback to system error log if custom log file isn't writable (only if WP_DEBUG is enabled)
-        // Debug output removed for WordPress.org compliance
+    // Use WordPress default error_log() - logs to debug.log if WP_DEBUG_LOG is enabled
+    if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+        error_log($log_message);
     }
 }
 
@@ -168,6 +142,17 @@ function shift8_gravitysap_decrypt_password($encrypted_password) {
     
     return openssl_decrypt($encrypted, 'AES-256-CBC', $key, 0, $iv);
 }
+
+/**
+ * Filter SSL verification setting
+ *
+ * @since 1.2.1
+ */
+add_filter('shift8_gravitysap_sslverify', function($verify) {
+    $settings = get_option('shift8_gravitysap_settings', array());
+    // Return user's setting, default to false (disabled) if not set for backwards compatibility
+    return isset($settings['sap_ssl_verify']) && $settings['sap_ssl_verify'] === '1';
+});
 
 // Check for minimum PHP version
 if (version_compare(PHP_VERSION, '7.4', '<')) {
@@ -386,8 +371,8 @@ class Shift8_GravitySAP {
      * @since 1.0.0
      */
     public function form_settings_page() {
-        // Verify user capabilities
-        if (!current_user_can('manage_options')) {
+        // Verify user capabilities - use Gravity Forms capability
+        if (!GFCommon::current_user_can_any('gravityforms_edit_forms')) {
             wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'shift8-gravity-forms-sap-b1-integration'));
         }
         
@@ -1475,8 +1460,9 @@ class Shift8_GravitySAP {
             
             // Load SAP status
             $status = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$table_name} WHERE entry_id = %d AND meta_key = 'sap_b1_status'",
-                $entry['id']
+                "SELECT meta_value FROM {$wpdb->prefix}gf_entry_meta WHERE entry_id = %d AND meta_key = %s",
+                $entry['id'],
+                'sap_b1_status'
             ));
             if ($status) {
                 $entry['sap_b1_status'] = $status;
@@ -1484,8 +1470,9 @@ class Shift8_GravitySAP {
             
             // Load SAP CardCode
             $cardcode = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$table_name} WHERE entry_id = %d AND meta_key = 'sap_b1_cardcode'",
-                $entry['id']
+                "SELECT meta_value FROM {$wpdb->prefix}gf_entry_meta WHERE entry_id = %d AND meta_key = %s",
+                $entry['id'],
+                'sap_b1_cardcode'
             ));
             if ($cardcode) {
                 $entry['sap_b1_cardcode'] = $cardcode;
@@ -1493,8 +1480,9 @@ class Shift8_GravitySAP {
             
             // Load SAP error
             $error = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$table_name} WHERE entry_id = %d AND meta_key = 'sap_b1_error'",
-                $entry['id']
+                "SELECT meta_value FROM {$wpdb->prefix}gf_entry_meta WHERE entry_id = %d AND meta_key = %s",
+                $entry['id'],
+                'sap_b1_error'
             ));
             if ($error) {
                 $entry['sap_b1_error'] = $error;
@@ -1750,7 +1738,7 @@ class Shift8_GravitySAP {
      */
     public function ajax_retry_sap_submission() {
         // Verify nonce
-        if (!wp_verify_nonce($_POST['nonce'], 'retry_sap_submission')) {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'retry_sap_submission')) {
             wp_send_json_error('Invalid nonce');
         }
         
@@ -1759,7 +1747,7 @@ class Shift8_GravitySAP {
             wp_send_json_error('Insufficient permissions');
         }
         
-        $entry_id = intval($_POST['entry_id']);
+        $entry_id = isset($_POST['entry_id']) ? intval($_POST['entry_id']) : 0;
         if (empty($entry_id)) {
             wp_send_json_error('Invalid entry ID');
         }
