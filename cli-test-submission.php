@@ -263,6 +263,42 @@ class Shift8_GravitySAP_Test_Command {
             WP_CLI::line('');
             WP_CLI::line("✓ Test entry {$entry_id} updated with SAP status");
             
+            // Verify data by querying SAP B1
+            WP_CLI::line('');
+            WP_CLI::line('🔍 VERIFYING DATA IN SAP B1...');
+            WP_CLI::line('   Querying SAP for Business Partner: ' . $result['CardCode']);
+            
+            $verification = $this->verify_sap_data($sap_service, $result['CardCode'], $business_partner_data);
+            
+            if ($verification['success']) {
+                WP_CLI::line('');
+                WP_CLI::line('═══════════════════════════════════════════════════════');
+                WP_CLI::success('✅ VERIFICATION SUCCESSFUL!');
+                WP_CLI::line('═══════════════════════════════════════════════════════');
+                WP_CLI::line('');
+                WP_CLI::line('📋 Field Comparison:');
+                
+                foreach ($verification['comparisons'] as $comparison) {
+                    $status = $comparison['match'] ? '✓' : '✗';
+                    $color = $comparison['match'] ? 'success' : 'warning';
+                    
+                    if ($comparison['match']) {
+                        WP_CLI::line("   {$status} {$comparison['field']}: {$comparison['sent']}");
+                    } else {
+                        WP_CLI::warning("   {$status} {$comparison['field']}: Sent '{$comparison['sent']}' but SAP has '{$comparison['received']}'");
+                    }
+                }
+                
+                WP_CLI::line('');
+                WP_CLI::line("✓ Matched: {$verification['matched']}/{$verification['total']} fields");
+                
+                if ($verification['matched'] < $verification['total']) {
+                    WP_CLI::warning("⚠️  Some fields did not match - review above");
+                }
+            } else {
+                WP_CLI::error('❌ VERIFICATION FAILED: ' . $verification['error']);
+            }
+            
         } catch (Exception $e) {
             WP_CLI::line('');
             WP_CLI::error('❌ EXCEPTION: ' . $e->getMessage());
@@ -293,6 +329,131 @@ class Shift8_GravitySAP_Test_Command {
         WP_CLI::line('  TEST COMPLETE');
         WP_CLI::line('═══════════════════════════════════════════════════════');
         WP_CLI::line('');
+    }
+    
+    /**
+     * Verify data in SAP B1 by querying and comparing
+     */
+    private function verify_sap_data($sap_service, $card_code, $sent_data) {
+        try {
+            // Use reflection to access private make_request method
+            $reflection = new ReflectionClass($sap_service);
+            $make_request_method = $reflection->getMethod('make_request');
+            $make_request_method->setAccessible(true);
+            
+            // Query SAP for the Business Partner
+            $response = $make_request_method->invoke(
+                $sap_service,
+                'GET',
+                "/BusinessPartners('{$card_code}')"
+            );
+            
+            if (is_wp_error($response)) {
+                return array(
+                    'success' => false,
+                    'error' => $response->get_error_message()
+                );
+            }
+            
+            $status_code = wp_remote_retrieve_response_code($response);
+            if ($status_code !== 200) {
+                return array(
+                    'success' => false,
+                    'error' => "SAP returned status code {$status_code}"
+                );
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            $sap_data = json_decode($body, true);
+            
+            if (!$sap_data) {
+                return array(
+                    'success' => false,
+                    'error' => 'Failed to parse SAP response'
+                );
+            }
+            
+            // Compare sent data with received data
+            $comparisons = array();
+            $matched = 0;
+            $total = 0;
+            
+            // Compare main fields
+            $fields_to_check = array(
+                'CardName' => 'CardName',
+                'CardType' => 'CardType',
+                'EmailAddress' => 'EmailAddress',
+                'Phone1' => 'Phone1',
+                'Website' => 'Website',
+            );
+            
+            foreach ($fields_to_check as $sent_field => $sap_field) {
+                if (isset($sent_data[$sent_field])) {
+                    $total++;
+                    $sent_value = $sent_data[$sent_field];
+                    $received_value = $sap_data[$sap_field] ?? '';
+                    $match = ($sent_value === $received_value);
+                    
+                    if ($match) {
+                        $matched++;
+                    }
+                    
+                    $comparisons[] = array(
+                        'field' => $sent_field,
+                        'sent' => $sent_value,
+                        'received' => $received_value,
+                        'match' => $match
+                    );
+                }
+            }
+            
+            // Compare address fields
+            if (isset($sent_data['BPAddresses'][0])) {
+                $sent_address = $sent_data['BPAddresses'][0];
+                
+                $address_fields = array(
+                    'Street' => 'Address',
+                    'City' => 'City',
+                    'State' => 'BillToState',
+                    'ZipCode' => 'ZipCode',
+                    'Country' => 'Country'
+                );
+                
+                foreach ($address_fields as $bp_field => $main_field) {
+                    if (isset($sent_address[$bp_field])) {
+                        $total++;
+                        $sent_value = $sent_address[$bp_field];
+                        $received_value = $sap_data[$main_field] ?? '';
+                        $match = ($sent_value === $received_value);
+                        
+                        if ($match) {
+                            $matched++;
+                        }
+                        
+                        $comparisons[] = array(
+                            'field' => "Address.{$bp_field}",
+                            'sent' => $sent_value,
+                            'received' => $received_value,
+                            'match' => $match
+                        );
+                    }
+                }
+            }
+            
+            return array(
+                'success' => true,
+                'comparisons' => $comparisons,
+                'matched' => $matched,
+                'total' => $total,
+                'sap_data' => $sap_data
+            );
+            
+        } catch (Exception $e) {
+            return array(
+                'success' => false,
+                'error' => $e->getMessage()
+            );
+        }
     }
     
     /**
