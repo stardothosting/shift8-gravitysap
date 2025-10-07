@@ -2480,4 +2480,9 @@ class Shift8_GravitySAP {
 
 // Initialize plugin
 shift8_gravitysap_debug_log('Plugin file loaded, initializing...');
-Shift8_GravitySAP::get_instance(); 
+Shift8_GravitySAP::get_instance();
+
+// Load WP-CLI command if in CLI context
+if (defined('WP_CLI') && WP_CLI) {
+    require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'cli-test-submission.php';
+} 
