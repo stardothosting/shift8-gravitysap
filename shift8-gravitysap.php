@@ -1277,27 +1277,13 @@ class Shift8_GravitySAP {
                 // Store address data for dual population
                 $address_data[$address_field] = $field_value;
                 
-                // Populate BPAddresses collection
+                // Populate BPAddresses collection ONLY
+                // SAP will automatically extract and populate the main BP address fields
                 if (!isset($business_partner['BPAddresses'])) {
                     $business_partner['BPAddresses'] = array(array('AddressType' => 'bo_BillTo'));
                 }
                 
                 $business_partner['BPAddresses'][0][$address_field] = $field_value;
-                
-                // ALSO populate main Business Partner address fields
-                // SAP B1 stores addresses in both locations
-                // Note: SAP uses BillToState/ShipToState, not State on main BP object
-                $main_field_map = array(
-                    'Street' => 'Address',
-                    'City' => 'City',
-                    'State' => 'BillToState',  // SAP uses BillToState for billing address state
-                    'ZipCode' => 'ZipCode',
-                    'Country' => 'Country'
-                );
-                
-                if (isset($main_field_map[$address_field])) {
-                    $business_partner[$main_field_map[$address_field]] = $field_value;
-                }
             } else {
                 $business_partner[$sap_field] = $field_value;
             }
