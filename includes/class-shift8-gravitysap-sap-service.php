@@ -148,28 +148,37 @@ class Shift8_GravitySAP_SAP_Service {
             $business_partner_data['CardType'] = 'cCustomer';
         }
         
-        // Handle CardCode prefix if specified
-        $card_code_prefix = rgar($business_partner_data, 'CardCodePrefix', '');
-        unset($business_partner_data['CardCodePrefix']); // Remove from data sent to SAP
+        // Get the requested prefix (if any)
+        $requested_prefix = rgar($business_partner_data, 'CardCodePrefix', '');
+        unset($business_partner_data['CardCodePrefix']);
         
-        // Remove any Series or CardCode to let SAP auto-generate
-        unset($business_partner_data['Series']);
+        // Remove CardCode to let SAP auto-generate it
         unset($business_partner_data['CardCode']);
         
-        // Set the appropriate Series based on the selected prefix
-        if (!empty($card_code_prefix) && isset($series_config['series_map'][$card_code_prefix])) {
-            $series_id = $series_config['series_map'][$card_code_prefix];
-            $business_partner_data['Series'] = $series_id;
-            shift8_gravitysap_debug_log('Using numbering series for prefix', array(
-                'prefix' => $card_code_prefix,
-                'series_id' => $series_id,
-                'series_name' => $series_config['prefixes'][$card_code_prefix]
-            ));
-        } elseif (!empty($series_config['fallback_series'])) {
-            $business_partner_data['Series'] = $series_config['fallback_series'];
-            shift8_gravitysap_debug_log('Using fallback numbering series', array('series_id' => $series_config['fallback_series']));
+        // Remove any Series first
+        unset($business_partner_data['Series']);
+        
+        // Get available numbering series
+        $available_series = $this->get_available_numbering_series();
+        shift8_gravitysap_debug_log('Available numbering series', array('series' => $available_series, 'requested_prefix' => $requested_prefix));
+        
+        // If a specific prefix was requested, try to find the series for that prefix
+        if (!empty($requested_prefix) && !empty($available_series)) {
+            // Query existing BPs with this prefix to find the right series
+            $prefix_series = $this->get_series_for_prefix($requested_prefix);
+            if ($prefix_series) {
+                $business_partner_data['Series'] = $prefix_series;
+                shift8_gravitysap_debug_log('Using numbering series for prefix', array('prefix' => $requested_prefix, 'series' => $prefix_series));
+            } else {
+                // Fallback to first available series
+                $business_partner_data['Series'] = $available_series[0];
+                shift8_gravitysap_debug_log('Prefix series not found, using default', array('series' => $available_series[0]));
+            }
+        } elseif (!empty($available_series)) {
+            $business_partner_data['Series'] = $available_series[0];
+            shift8_gravitysap_debug_log('Using default numbering series', array('series' => $available_series[0]));
         } else {
-            shift8_gravitysap_debug_log('No specific series found - letting SAP auto-assign');
+            shift8_gravitysap_debug_log('WARNING: No numbering series found, SAP may reject this');
         }
         
         shift8_gravitysap_debug_log('Creating Business Partner with full data', $business_partner_data);
@@ -333,6 +342,30 @@ class Shift8_GravitySAP_SAP_Service {
     /**
      * Get available numbering series for Business Partners
      */
+    /**
+     * Get the series ID for a specific prefix by querying existing BPs
+     */
+    private function get_series_for_prefix($prefix) {
+        try {
+            // Query existing BPs that start with this prefix
+            $response = $this->make_request('GET', "/BusinessPartners?\$filter=startswith(CardCode, '{$prefix}')&\$select=Series&\$top=1");
+            
+            if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                
+                if (!empty($data['value'][0]['Series'])) {
+                    return $data['value'][0]['Series'];
+                }
+            }
+            
+            return null;
+        } catch (Exception $e) {
+            shift8_gravitysap_debug_log('Error getting series for prefix', array('prefix' => $prefix, 'error' => $e->getMessage()));
+            return null;
+        }
+    }
+    
     private function get_available_numbering_series() {
         try {
             // Ensure we have a valid session
@@ -434,10 +467,22 @@ class Shift8_GravitySAP_SAP_Service {
 
             $available_series = $this->get_available_numbering_series();
             
+            // Test each prefix to see which series they use
+            $prefix_tests = array('D', 'E', 'O', 'M', 'C', 'S', 'L', 'V', 'P');
+            $prefix_mapping = array();
+            
+            foreach ($prefix_tests as $prefix) {
+                $series_id = $this->get_series_for_prefix($prefix);
+                if ($series_id) {
+                    $prefix_mapping[$prefix] = $series_id;
+                }
+            }
+            
             $result = array(
                 'success' => !empty($available_series),
                 'series_count' => count($available_series),
-                'available_series' => $available_series
+                'available_series' => $available_series,
+                'prefix_mapping' => $prefix_mapping
             );
             
             if (empty($available_series)) {
@@ -449,7 +494,18 @@ class Shift8_GravitySAP_SAP_Service {
                     'Set the series as Primary or Default and save'
                 );
             } else {
-                $result['message'] = 'Found ' . count($available_series) . ' numbering series for Business Partners: ' . implode(', ', $available_series);
+                $message = 'Found ' . count($available_series) . ' numbering series for Business Partners: ' . implode(', ', $available_series);
+                
+                if (!empty($prefix_mapping)) {
+                    $message .= "\n\nPrefix to Series Mapping:";
+                    foreach ($prefix_mapping as $prefix => $series) {
+                        $message .= "\n  • Prefix '{$prefix}' uses Series {$series}";
+                    }
+                } else {
+                    $message .= "\n\nNo existing Business Partners found to determine prefix mapping.";
+                }
+                
+                $result['message'] = $message;
             }
             
             shift8_gravitysap_debug_log('Numbering series test result', $result);
