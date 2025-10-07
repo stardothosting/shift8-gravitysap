@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.1.9
+* Stable tag: 1.2.0
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -80,6 +80,16 @@ Common solutions:
 
 == Changelog ==
 
+= 1.2.0 =
+* **NEW: Contact Person Support** - Map form fields to Contact Persons tab in SAP B1
+* Added 5 new Contact Person fields: FirstName, LastName, Phone, Email, Address
+* **NEW: WP-CLI Testing Command** - End-to-end testing with `wp shift8-gravitysap test_submission`
+* Enhanced field mapping with clear labels for BPAddresses vs ContactEmployees
+* Improved SAP B1 data structure handling for addresses and contacts
+* Comprehensive test suite: 90 unit tests + E2E integration testing
+* Updated documentation with SAP B1 data structure best practices
+* All tests passing with 214 assertions
+
 = 1.1.1 =
 * Enhanced field mapping system - validation is now completely dynamic based on user's field mapping configuration
 * Improved validation efficiency - only validates fields that are actually mapped to SAP
@@ -126,6 +136,9 @@ Common solutions:
 * Connection and integration testing tools
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+Major update with Contact Person support! You can now map form fields to the Contact Persons tab in SAP B1. Includes new WP-CLI testing command for developers.
 
 = 1.0.0 =
 Initial release of the Shift8 Integration for Gravity Forms and SAP Business One plugin.
@@ -195,6 +208,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 ## Field Mapping
 
+### Main Business Partner Fields
 | SAP Field | Description | Required | Max Length |
 |-----------|-------------|----------|------------|
 | `CardName` | Business Partner Name | Yes | ~100 chars |
@@ -204,13 +218,30 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 | `Cellular` | Mobile Phone | No | ~20 chars |
 | `Fax` | Fax Number | No | ~20 chars |
 | `Website` | Website URL | No | URL format |
+
+### Address Fields (BPAddresses - appears in General tab)
+| SAP Field | Description | Required | Max Length |
+|-----------|-------------|----------|------------|
 | `BPAddresses.Street` | Street Address | No | ~100 chars |
 | `BPAddresses.City` | City | No | ~25 chars |
 | `BPAddresses.State` | State/Province | No | **3-4 chars** (codes only!) |
 | `BPAddresses.ZipCode` | Zip/Postal Code | No | ~20 chars |
 | `BPAddresses.Country` | Country | No | 2-letter code |
 
-**Important**: SAP has strict field length limits. Use state codes ("CA" not "California") and country codes ("US" not "United States").
+### Contact Person Fields (ContactEmployees - appears in Contact Persons tab)
+| SAP Field | Description | Required | Max Length |
+|-----------|-------------|----------|------------|
+| `ContactEmployees.FirstName` | Contact First Name | No | ~50 chars |
+| `ContactEmployees.LastName` | Contact Last Name | No | ~50 chars |
+| `ContactEmployees.Phone1` | Contact Phone | No | ~20 chars |
+| `ContactEmployees.E_Mail` | Contact Email | No | Email format |
+| `ContactEmployees.Address` | Contact Address | No | ~254 chars |
+
+**Important**: 
+- SAP has strict field length limits. Use state codes ("CA" not "California") and country codes ("US" not "United States")
+- BPAddresses data appears in the **General tab** of the Business Partner in SAP B1
+- ContactEmployees data appears in the **Contact Persons tab** of the Business Partner in SAP B1
+- You can map address data to either BPAddresses, ContactEmployees, or both depending on your needs
 
 ## Troubleshooting
 

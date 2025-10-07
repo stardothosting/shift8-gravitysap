@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.1.9
+ * Version: 1.2.0
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.1.1');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.2.0');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -584,11 +584,16 @@ class Shift8_GravitySAP {
             'Cellular' => esc_html__('Mobile Phone', 'shift8-gravity-forms-sap-b1-integration'),
             'Fax' => esc_html__('Fax Number', 'shift8-gravity-forms-sap-b1-integration'),
             'Website' => esc_html__('Website', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.Street' => esc_html__('Street Address', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.City' => esc_html__('City', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.State' => esc_html__('State/Province', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.ZipCode' => esc_html__('Zip/Postal Code', 'shift8-gravity-forms-sap-b1-integration'),
-            'BPAddresses.Country' => esc_html__('Country', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.Street' => esc_html__('Address: Street (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.City' => esc_html__('Address: City (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.State' => esc_html__('Address: State/Province (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.ZipCode' => esc_html__('Address: Zip/Postal Code (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
+            'BPAddresses.Country' => esc_html__('Address: Country (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
+            'ContactEmployees.FirstName' => esc_html__('Contact Person: First Name', 'shift8-gravity-forms-sap-b1-integration'),
+            'ContactEmployees.LastName' => esc_html__('Contact Person: Last Name', 'shift8-gravity-forms-sap-b1-integration'),
+            'ContactEmployees.Phone1' => esc_html__('Contact Person: Phone', 'shift8-gravity-forms-sap-b1-integration'),
+            'ContactEmployees.E_Mail' => esc_html__('Contact Person: Email', 'shift8-gravity-forms-sap-b1-integration'),
+            'ContactEmployees.Address' => esc_html__('Contact Person: Address', 'shift8-gravity-forms-sap-b1-integration'),
         );
     }
 
@@ -687,6 +692,32 @@ class Shift8_GravitySAP {
                 'required' => false,
                 'description' => 'Country',
                 'validation_message' => 'Use 2-letter country codes (US, CA, GB) - not full country names'
+            ),
+            'ContactEmployees.FirstName' => array(
+                'max_length' => 50,
+                'required' => false,
+                'description' => 'Contact Person First Name'
+            ),
+            'ContactEmployees.LastName' => array(
+                'max_length' => 50,
+                'required' => false,
+                'description' => 'Contact Person Last Name'
+            ),
+            'ContactEmployees.Phone1' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'Contact Person Phone'
+            ),
+            'ContactEmployees.E_Mail' => array(
+                'max_length' => 100,
+                'required' => false,
+                'format' => 'email',
+                'description' => 'Contact Person Email'
+            ),
+            'ContactEmployees.Address' => array(
+                'max_length' => 254,
+                'required' => false,
+                'description' => 'Contact Person Address'
             ),
         );
     }
@@ -1248,8 +1279,8 @@ class Shift8_GravitySAP {
             $business_partner['CardName'] = trim(sanitize_text_field($first_name) . ' ' . sanitize_text_field($last_name));
         }
         
-        // Track address fields for dual population
-        $address_data = array();
+        // Track contact person data
+        $contact_person_data = array();
         
         foreach ($field_mapping as $sap_field => $field_id) {
             // Skip composite fields as they're handled above
@@ -1270,23 +1301,60 @@ class Shift8_GravitySAP {
             // Sanitize field value
             $field_value = sanitize_text_field($field_value);
 
-            // Handle address fields specially
-            if (strpos($sap_field, 'BPAddresses.') === 0) {
+            // Handle Contact Person fields
+            if (strpos($sap_field, 'ContactEmployees.') === 0) {
+                $contact_field = str_replace('ContactEmployees.', '', $sap_field);
+                $contact_person_data[$contact_field] = $field_value;
+            }
+            // Handle address fields for BPAddresses collection
+            elseif (strpos($sap_field, 'BPAddresses.') === 0) {
                 $address_field = str_replace('BPAddresses.', '', $sap_field);
                 
-                // Store address data for dual population
-                $address_data[$address_field] = $field_value;
-                
-                // Populate BPAddresses collection ONLY
-                // SAP will automatically extract and populate the main BP address fields
                 if (!isset($business_partner['BPAddresses'])) {
                     $business_partner['BPAddresses'] = array(array('AddressType' => 'bo_BillTo'));
                 }
-                
                 $business_partner['BPAddresses'][0][$address_field] = $field_value;
-            } else {
+            }
+            // Handle main Business Partner fields
+            else {
                 $business_partner[$sap_field] = $field_value;
             }
+        }
+        
+        // Create Contact Person entry if we have contact data
+        if (!empty($contact_person_data)) {
+            $contact_person = array();
+            
+            // Set the contact name
+            if (!empty($contact_person_data['FirstName']) || !empty($contact_person_data['LastName'])) {
+                $contact_person['Name'] = trim(
+                    ($contact_person_data['FirstName'] ?? '') . ' ' . 
+                    ($contact_person_data['LastName'] ?? '')
+                );
+            } else {
+                $contact_person['Name'] = $business_partner['CardName'] ?? 'Primary Contact';
+            }
+            
+            // Add first/last name
+            if (!empty($contact_person_data['FirstName'])) {
+                $contact_person['FirstName'] = $contact_person_data['FirstName'];
+            }
+            if (!empty($contact_person_data['LastName'])) {
+                $contact_person['LastName'] = $contact_person_data['LastName'];
+            }
+            
+            // Add contact fields
+            if (!empty($contact_person_data['E_Mail'])) {
+                $contact_person['E_Mail'] = $contact_person_data['E_Mail'];
+            }
+            if (!empty($contact_person_data['Phone1'])) {
+                $contact_person['Phone1'] = $contact_person_data['Phone1'];
+            }
+            if (!empty($contact_person_data['Address'])) {
+                $contact_person['Address'] = $contact_person_data['Address'];
+            }
+            
+            $business_partner['ContactEmployees'] = array($contact_person);
         }
 
         return $business_partner;

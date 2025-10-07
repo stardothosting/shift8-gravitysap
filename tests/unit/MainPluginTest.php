@@ -400,9 +400,9 @@ class MainPluginTest extends TestCase {
         $this->assertIsArray($allowed_fields, 'get_allowed_sap_fields should return array');
         $this->assertEquals(array_keys($sap_fields), $allowed_fields, 'Allowed fields should match SAP field keys');
         
-        // Test expected count (12 fields total)
-        $this->assertCount(12, $sap_fields, 'Should have 12 SAP fields');
-        $this->assertCount(12, $allowed_fields, 'Should have 12 allowed fields');
+        // Test expected count (17 fields total: 7 main + 5 BPAddresses + 5 ContactEmployees)
+        $this->assertCount(17, $sap_fields, 'Should have 17 SAP fields');
+        $this->assertCount(17, $allowed_fields, 'Should have 17 allowed fields');
     }
 
     /**
