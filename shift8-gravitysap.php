@@ -1286,10 +1286,11 @@ class Shift8_GravitySAP {
                 
                 // ALSO populate main Business Partner address fields
                 // SAP B1 stores addresses in both locations
+                // Note: SAP uses BillToState/ShipToState, not State on main BP object
                 $main_field_map = array(
                     'Street' => 'Address',
                     'City' => 'City',
-                    'State' => 'State',
+                    'State' => 'BillToState',  // SAP uses BillToState for billing address state
                     'ZipCode' => 'ZipCode',
                     'Country' => 'Country'
                 );
