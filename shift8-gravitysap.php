@@ -1248,6 +1248,9 @@ class Shift8_GravitySAP {
             $business_partner['CardName'] = trim(sanitize_text_field($first_name) . ' ' . sanitize_text_field($last_name));
         }
         
+        // Track address fields for dual population
+        $address_data = array();
+        
         foreach ($field_mapping as $sap_field => $field_id) {
             // Skip composite fields as they're handled above
             if ($sap_field === 'CardName_FirstName' || $sap_field === 'CardName_LastName') {
@@ -1271,11 +1274,29 @@ class Shift8_GravitySAP {
             if (strpos($sap_field, 'BPAddresses.') === 0) {
                 $address_field = str_replace('BPAddresses.', '', $sap_field);
                 
+                // Store address data for dual population
+                $address_data[$address_field] = $field_value;
+                
+                // Populate BPAddresses collection
                 if (!isset($business_partner['BPAddresses'])) {
                     $business_partner['BPAddresses'] = array(array('AddressType' => 'bo_BillTo'));
                 }
                 
                 $business_partner['BPAddresses'][0][$address_field] = $field_value;
+                
+                // ALSO populate main Business Partner address fields
+                // SAP B1 stores addresses in both locations
+                $main_field_map = array(
+                    'Street' => 'Address',
+                    'City' => 'City',
+                    'State' => 'State',
+                    'ZipCode' => 'ZipCode',
+                    'Country' => 'Country'
+                );
+                
+                if (isset($main_field_map[$address_field])) {
+                    $business_partner[$main_field_map[$address_field]] = $field_value;
+                }
             } else {
                 $business_partner[$sap_field] = $field_value;
             }
