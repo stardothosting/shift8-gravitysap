@@ -2,6 +2,7 @@
 
 A secure WordPress plugin that integrates Gravity Forms with SAP Business One, automatically creating Business Partner records from form submissions.
 
+[![Version](https://img.shields.io/badge/version-1.2.4-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -178,6 +179,33 @@ wp shift8-gravitysap test_submission --form_id=<id>
 Tests real SAP B1 integration with data verification.
 
 ## Changelog
+
+### 1.2.2
+* **MAJOR FEATURE**: Added Sales Quotation creation functionality
+* **NEW**: Create sales quotations in SAP B1 automatically after Business Partner creation
+* **NEW**: Dynamic line item mapping for quotation products with checkbox support
+* **NEW**: On-demand ItemCode loading system with master sync button
+* **NEW**: Dual mapping system - form fields trigger line items, SAP ItemCodes define products
+* **ENHANCEMENT**: Added active ItemCode filtering to prevent inactive item errors
+* **ENHANCEMENT**: Added proper UoM (Unit of Measure) handling for quotation line items
+* **ENHANCEMENT**: Enhanced WP-CLI test command with full quotation testing and verification
+* **ENHANCEMENT**: Added ItemCode management tools and debugging commands
+* **FIX**: Resolved "Item is inactive" errors by filtering only active ItemCodes
+* **FIX**: Resolved "Cannot add or update document; specify a UoM code" by using numeric UoM entries
+* **FIX**: Improved error handling and user feedback for quotation creation
+* **TESTING**: Added comprehensive end-to-end testing for Business Partner + Sales Quotation workflow
+* **TESTING**: All 85 unit tests pass with enhanced coverage
+* **PERFORMANCE**: Optimized ItemCode loading with intelligent caching and refresh options
+
+### 1.2.1
+* **SECURITY: Fixed 7 critical security issues** - Enhanced input sanitization, nonce verification, and capability checks
+* **FIXED: SSL verification setting** - Now properly saves and persists checkbox state
+* **FIXED: Debug logging setting** - Checkbox state now saves correctly
+* **IMPROVED: Centralized logging** - All logging now uses `shift8_gravitysap_debug_log()` with proper WP_DEBUG integration
+* **IMPROVED: Password security** - SAP password now stored encrypted in memory and decrypted only when needed
+* **IMPROVED: Settings save mechanism** - Removed conflicting WordPress Settings API callback
+* **REMOVED: Custom log file management** - Now uses WordPress standard `error_log()` for better security
+* All tests passing: 85 tests with 205 assertions
 
 ### 1.2.0
 * **NEW: Contact Person Support** - Map form fields to Contact Persons tab in SAP B1

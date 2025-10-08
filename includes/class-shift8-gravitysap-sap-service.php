@@ -959,4 +959,105 @@ class Shift8_GravitySAP_SAP_Service {
         delete_transient($cache_key);
         shift8_gravitysap_debug_log('Cleared numbering series configuration cache');
     }
+    
+    /**
+     * Create Sales Quotation in SAP B1
+     *
+     * @since 1.2.2
+     * @param array $quotation_data Sales Quotation data
+     * @return array Created quotation data including DocEntry
+     * @throws Exception If creation fails
+     */
+    public function create_sales_quotation($quotation_data) {
+        shift8_gravitysap_debug_log('=== STARTING SALES QUOTATION CREATION ===');
+        
+        // Ensure we have a valid session
+        if (!$this->ensure_authenticated()) {
+            throw new Exception('Failed to authenticate with SAP');
+        }
+
+        // Validate required fields
+        if (empty($quotation_data['CardCode'])) {
+            throw new Exception('CardCode is required for Sales Quotation creation');
+        }
+
+        // Ensure DocumentLines exists and is not empty
+        if (empty($quotation_data['DocumentLines']) || !is_array($quotation_data['DocumentLines'])) {
+            throw new Exception('DocumentLines is required for Sales Quotation creation');
+        }
+
+        shift8_gravitysap_debug_log('Creating Sales Quotation with data', $quotation_data);
+
+        $response = $this->make_request('POST', '/Quotations', $quotation_data);
+
+        if (is_wp_error($response)) {
+            throw new Exception('Failed to create Sales Quotation: ' . esc_html($response->get_error_message()));
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        
+        if ($response_code === 201) {
+            // Successfully created
+            $body = wp_remote_retrieve_body($response);
+            $result = json_decode($body, true);
+            
+            shift8_gravitysap_debug_log(
+                'Sales Quotation created successfully',
+                array(
+                    'DocEntry' => $result['DocEntry'] ?? 'N/A',
+                    'DocNum' => $result['DocNum'] ?? 'N/A',
+                    'CardCode' => $result['CardCode'] ?? 'N/A'
+                )
+            );
+            
+            return $result;
+        } else {
+            // Handle error response
+            $body = wp_remote_retrieve_body($response);
+            $error_data = json_decode($body, true);
+            
+            shift8_gravitysap_debug_log('Sales Quotation creation failed', array(
+                'status_code' => $response_code,
+                'response_body' => $body
+            ));
+            
+            $error_message = 'Unknown error';
+            if (!empty($error_data['error']['message']['value'])) {
+                $error_message = $error_data['error']['message']['value'];
+            }
+            
+            throw new Exception('SAP Sales Quotation creation failed: ' . esc_html($error_message));
+        }
+    }
+    
+    /**
+     * Get Sales Quotation by DocEntry
+     *
+     * @since 1.2.2
+     * @param int $doc_entry Document Entry number
+     * @return array|false Quotation data or false on failure
+     */
+    public function get_sales_quotation($doc_entry) {
+        if (!$this->ensure_authenticated()) {
+            return false;
+        }
+
+        $response = $this->make_request('GET', '/Quotations(' . intval($doc_entry) . ')');
+
+        if (is_wp_error($response)) {
+            shift8_gravitysap_debug_log('Failed to get Sales Quotation', array(
+                'doc_entry' => $doc_entry,
+                'error' => $response->get_error_message()
+            ));
+            return false;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        if ($response_code === 200) {
+            $body = wp_remote_retrieve_body($response);
+            return json_decode($body, true);
+        }
+
+        return false;
+    }
 } 

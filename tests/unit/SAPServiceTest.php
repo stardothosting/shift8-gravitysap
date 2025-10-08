@@ -565,4 +565,5 @@ class SAPServiceTest extends TestCase {
         $this->assertGreaterThanOrEqual(1, $result['series_count']);
         $this->assertContains(15, $result['available_series']);
     }
+
 } 

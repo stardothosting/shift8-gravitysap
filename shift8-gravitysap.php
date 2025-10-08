@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.2.1
+ * Version: 1.2.4
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.2.1');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.2.4');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -219,6 +219,7 @@ class Shift8_GravitySAP {
         
         // Add retry functionality for failed submissions
         add_action('wp_ajax_retry_sap_submission', array($this, 'ajax_retry_sap_submission'));
+        add_action('wp_ajax_load_itemcodes', array($this, 'ajax_load_itemcodes'));
         add_action('admin_footer', array($this, 'add_retry_button_script'));
         
         
@@ -532,11 +533,30 @@ class Shift8_GravitySAP {
                     </td>
                 </tr>
                 
+                <tr>
+                    <th scope="row">
+                        <label for="sap_create_quotation"><?php esc_html_e('Create Sales Quotation', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
+                    </th>
+                    <td>
+                        <input type="checkbox" id="sap_create_quotation" name="sap_create_quotation" value="1" <?php checked(rgar($settings, 'create_quotation'), '1'); ?> />
+                        <label for="sap_create_quotation"><?php esc_html_e('Automatically create a Sales Quotation in SAP B1 after creating the Business Partner', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
+                        <p class="description">
+                            <?php esc_html_e('When enabled, a Sales Quotation will be created and linked to the newly created Business Partner. Configure quotation field mapping below.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                        </p>
+                    </td>
+                </tr>
                 
                 <tr>
-                    <th scope="row"><?php esc_html_e('Field Mapping', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <th scope="row"><?php esc_html_e('Business Partner Field Mapping', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
                     <td>
                         <?php $this->render_field_mapping_table($form, $settings); ?>
+                    </td>
+                </tr>
+                
+                <tr id="sap-quotation-mapping-row" style="display: <?php echo rgar($settings, 'create_quotation') === '1' ? 'table-row' : 'none'; ?>;">
+                    <th scope="row"><?php esc_html_e('Sales Quotation Field Mapping', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <td>
+                        <?php $this->render_quotation_field_mapping_table($form, $settings); ?>
                     </td>
                 </tr>
             </table>
@@ -545,6 +565,19 @@ class Shift8_GravitySAP {
                 <input type="submit" name="gform-settings-save" value="<?php esc_attr_e('Update Settings', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-primary" />
             </p>
         </form>
+        
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            // Toggle quotation field mapping visibility
+            jQuery('#sap_create_quotation').on('change', function() {
+                if (jQuery(this).is(':checked')) {
+                    jQuery('#sap-quotation-mapping-row').show();
+                } else {
+                    jQuery('#sap-quotation-mapping-row').hide();
+                }
+            });
+        });
+        </script>
         
         <?php if (!empty(rgar($settings, 'enabled'))): ?>
             <?php $this->render_test_sections($form_id, $settings); ?>
@@ -706,6 +739,206 @@ class Shift8_GravitySAP {
             ),
         );
     }
+    
+    /**
+     * Get available SAP Sales Quotation fields for mapping
+     *
+     * @since 1.2.2
+     * @return array Array of SAP quotation field keys and labels
+     */
+    private function get_sap_quotation_fields() {
+        $fields = array(
+            'Comments' => esc_html__('Comments/Notes', 'shift8-gravity-forms-sap-b1-integration'),
+        );
+        
+        // Add 20 item slots (enough for most forms)
+        // These are collected dynamically - only items with ItemCode will be added to the quotation
+        for ($i = 1; $i <= 20; $i++) {
+            $fields["DocumentLines.{$i}.ItemCode"] = sprintf(esc_html__('Item Code #%d', 'shift8-gravity-forms-sap-b1-integration'), $i);
+            $fields["DocumentLines.{$i}.ItemDescription"] = sprintf(esc_html__('Description #%d', 'shift8-gravity-forms-sap-b1-integration'), $i);
+            $fields["DocumentLines.{$i}.Quantity"] = sprintf(esc_html__('Quantity #%d', 'shift8-gravity-forms-sap-b1-integration'), $i);
+            $fields["DocumentLines.{$i}.UnitPrice"] = sprintf(esc_html__('Unit Price #%d', 'shift8-gravity-forms-sap-b1-integration'), $i);
+            $fields["DocumentLines.{$i}.DiscountPercent"] = sprintf(esc_html__('Discount %% #%d', 'shift8-gravity-forms-sap-b1-integration'), $i);
+            $fields["DocumentLines.{$i}.TaxCode"] = sprintf(esc_html__('Tax Code #%d', 'shift8-gravity-forms-sap-b1-integration'), $i);
+        }
+        
+        return $fields;
+    }
+    
+    /**
+     * Get SAP Sales Quotation field limits and validation rules
+     *
+     * @since 1.2.2
+     * @return array Array of SAP quotation field validation rules
+     */
+    private function get_sap_quotation_field_limits() {
+        $limits = array(
+            'Comments' => array(
+                'max_length' => 254,
+                'required' => false,
+                'description' => 'Comments or notes for the quotation'
+            ),
+        );
+        
+        // Add limits for each item field (all optional - only items with ItemCode are processed)
+        $field_templates = array(
+            'ItemCode' => array(
+                'max_length' => 20,
+                'required' => false,
+                'description' => 'SAP Item Code (if provided, item will be added to quotation)'
+            ),
+            'ItemDescription' => array(
+                'max_length' => 100,
+                'required' => false,
+                'description' => 'Description of the item'
+            ),
+            'Quantity' => array(
+                'required' => false,
+                'format' => 'number',
+                'description' => 'Quantity (defaults to 1 if not provided)'
+            ),
+            'UnitPrice' => array(
+                'required' => false,
+                'format' => 'number',
+                'description' => 'Unit price (optional)'
+            ),
+            'DiscountPercent' => array(
+                'required' => false,
+                'format' => 'number',
+                'description' => 'Discount percentage (0-100)'
+            ),
+            'TaxCode' => array(
+                'max_length' => 8,
+                'required' => false,
+                'description' => 'Tax code (must exist in SAP)'
+            ),
+        );
+        
+        // Apply templates to all 20 line items
+        for ($i = 1; $i <= 20; $i++) {
+            foreach ($field_templates as $field_name => $field_limits) {
+                $limits["DocumentLines.{$i}.{$field_name}"] = $field_limits;
+            }
+        }
+        
+        return $limits;
+    }
+    
+    /**
+     * Get available SAP ItemCodes for quotation mapping
+     *
+     * @since 1.2.2
+     * @return array Array of ItemCode => ItemName pairs
+     */
+    private function get_sap_item_codes() {
+        // Check for manual refresh request
+        $force_refresh = isset($_GET['refresh_itemcodes']) && $_GET['refresh_itemcodes'] === '1';
+        
+        // Get persistent ItemCode storage
+        $option_key = 'shift8_gravitysap_item_codes_data';
+        $stored_data = get_option($option_key, array());
+        
+        // Check if we have valid cached ItemCodes (unless forcing refresh)
+        if (!$force_refresh && !empty($stored_data['items']) && is_array($stored_data['items'])) {
+            return $stored_data['items'];
+        }
+        
+        try {
+            // Get SAP settings
+            $sap_settings = get_option('shift8_gravitysap_settings', array());
+            
+            if (empty($sap_settings['sap_endpoint']) || empty($sap_settings['sap_company_db'])) {
+                return !empty($stored_data['items']) ? $stored_data['items'] : array();
+            }
+            
+            // Decrypt password
+            $sap_settings['sap_password'] = shift8_gravitysap_decrypt_password($sap_settings['sap_password']);
+            
+            // Create SAP service
+            require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
+            $sap_service = new Shift8_GravitySAP_SAP_Service($sap_settings);
+            
+            // CRITICAL: Ensure authentication before making request
+            $reflection = new ReflectionClass($sap_service);
+            $auth_method = $reflection->getMethod('ensure_authenticated');
+            $auth_method->setAccessible(true);
+            
+            if (!$auth_method->invoke($sap_service)) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    shift8_gravitysap_debug_log('ItemCode loading failed: Authentication failed');
+                }
+                // Return existing cached data if authentication fails
+                return !empty($stored_data['items']) ? $stored_data['items'] : array();
+            }
+            
+            // Use reflection to access private make_request method
+            $method = $reflection->getMethod('make_request');
+            $method->setAccessible(true);
+            
+            // Query for items (limit to 100 for performance, only active items)
+            $response = $method->invoke($sap_service, 'GET', '/Items?$top=100&$select=ItemCode,ItemName&$filter=Valid eq \'Y\'&$orderby=ItemCode');
+            
+            if (is_wp_error($response)) {
+                // Return existing cached data if request fails
+                return !empty($stored_data['items']) ? $stored_data['items'] : array();
+            }
+            
+            $response_code = wp_remote_retrieve_response_code($response);
+            if ($response_code !== 200) {
+                // Return existing cached data if request fails
+                return !empty($stored_data['items']) ? $stored_data['items'] : array();
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            
+            if (!isset($data['value']) || !is_array($data['value'])) {
+                // Return existing cached data if response is invalid
+                return !empty($stored_data['items']) ? $stored_data['items'] : array();
+            }
+            
+            $items = array();
+            foreach ($data['value'] as $item) {
+                if (!empty($item['ItemCode'])) {
+                    $items[$item['ItemCode']] = $item['ItemName'] ?? $item['ItemCode'];
+                }
+            }
+            
+            // Store persistently with metadata
+            $new_data = array(
+                'items' => $items,
+                'last_updated' => current_time('timestamp'),
+                'last_updated_formatted' => current_time('mysql'),
+                'count' => count($items),
+                'source' => 'sap_api'
+            );
+            
+            update_option($option_key, $new_data);
+            
+            // Log success for debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                shift8_gravitysap_debug_log('ItemCodes loaded and stored persistently', array(
+                    'count' => count($items),
+                    'force_refresh' => $force_refresh,
+                    'storage' => 'wp_options',
+                    'sample_items' => array_slice($items, 0, 3, true) // First 3 items for debugging
+                ));
+            }
+            
+            return $items;
+            
+        } catch (Exception $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                shift8_gravitysap_debug_log('ItemCode loading exception', array(
+                    'error' => $e->getMessage(),
+                    'returning_cached' => !empty($stored_data['items'])
+                ));
+            }
+            
+            // Return existing cached data if exception occurs
+            return !empty($stored_data['items']) ? $stored_data['items'] : array();
+        }
+    }
 
     /**
      * Render field mapping table
@@ -783,6 +1016,247 @@ class Shift8_GravitySAP {
         <p class="description">
             <span style="color: red;">*</span> <?php esc_html_e('Required fields', 'shift8-gravity-forms-sap-b1-integration'); ?>
             <br><?php esc_html_e('Form validation will automatically check these SAP field limits before submission.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+        </p>
+        <?php
+    }
+    
+    /**
+     * Render quotation field mapping table
+     *
+     * @since 1.2.2
+     * @param array $form     Form data
+     * @param array $settings Current settings
+     */
+    private function render_quotation_field_mapping_table($form, $settings) {
+        $quotation_fields = $this->get_sap_quotation_fields();
+        $quotation_limits = $this->get_sap_quotation_field_limits();
+        ?>
+        
+        <!-- ItemCode Management Section -->
+        <div class="itemcode-management" style="background: #fff; padding: 15px; border: 1px solid #c3c4c7; border-radius: 4px; margin-bottom: 20px;">
+            <h4 style="margin-top: 0;">
+                <span class="dashicons dashicons-products" style="vertical-align: middle;"></span>
+                <?php esc_html_e('SAP ItemCode Management', 'shift8-gravity-forms-sap-b1-integration'); ?>
+            </h4>
+            
+            <div class="itemcode-status-section">
+                <?php
+                $stored_data = get_option('shift8_gravitysap_item_codes_data', array());
+                $available_items = !empty($stored_data['items']) ? $stored_data['items'] : array();
+                $last_updated = !empty($stored_data['last_updated_formatted']) ? $stored_data['last_updated_formatted'] : null;
+                
+                if (empty($available_items)):
+                ?>
+                    <p style="margin: 10px 0;">
+                        <span class="dashicons dashicons-info" style="color: #0073aa; vertical-align: middle;"></span>
+                        <?php esc_html_e('ItemCodes need to be loaded from your SAP B1 system before you can map them to form fields.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                    </p>
+                    
+                    <button type="button" 
+                            class="button button-primary load-all-itemcodes-btn" 
+                            onclick="loadAllItemCodes()"
+                            style="margin-right: 10px;">
+                        <span class="dashicons dashicons-download" style="vertical-align: middle;"></span>
+                        <?php esc_html_e('Load ItemCodes from SAP B1', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                    </button>
+                    
+                    <span class="itemcode-global-status" style="color: #666;">
+                        <?php esc_html_e('Click to load available ItemCodes from your SAP B1 system', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                    </span>
+                <?php else: ?>
+                    <p style="margin: 10px 0;">
+                        <span class="dashicons dashicons-yes-alt" style="color: #00a32a; vertical-align: middle;"></span>
+                        <?php echo sprintf(esc_html__('✅ %d ItemCodes loaded and ready for mapping', 'shift8-gravity-forms-sap-b1-integration'), count($available_items)); ?>
+                        <?php if ($last_updated): ?>
+                            <br><small style="color: #666;">
+                                <?php echo sprintf(esc_html__('Last updated: %s', 'shift8-gravity-forms-sap-b1-integration'), esc_html($last_updated)); ?>
+                            </small>
+                        <?php endif; ?>
+                    </p>
+                    
+                    <button type="button" 
+                            class="button button-secondary reload-all-itemcodes-btn" 
+                            onclick="loadAllItemCodes(true)"
+                            style="margin-right: 10px;">
+                        <span class="dashicons dashicons-update" style="vertical-align: middle;"></span>
+                        <?php esc_html_e('Reload ItemCodes', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                    </button>
+                    
+                    <input type="text" 
+                           class="itemcode-global-search" 
+                           placeholder="<?php esc_attr_e('Search all ItemCodes...', 'shift8-gravity-forms-sap-b1-integration'); ?>"
+                           onkeyup="filterAllItemCodes(this.value)"
+                           style="width: 250px; margin-right: 10px;">
+                    
+                    <span class="itemcode-global-status" style="color: #00a32a;">
+                        <?php echo sprintf(esc_html__('Last updated: %s', 'shift8-gravity-forms-sap-b1-integration'), date('M j, Y g:i A')); ?>
+                    </span>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #2271b1; margin-bottom: 15px;">
+            <h4 style="margin-top: 0;"><?php esc_html_e('Sales Quotation Configuration', 'shift8-gravity-forms-sap-b1-integration'); ?></h4>
+            <p><?php esc_html_e('Map form fields to Sales Quotation line items. The quotation will be automatically linked to the Business Partner created above.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
+            <p><strong><?php esc_html_e('How it works:', 'shift8-gravity-forms-sap-b1-integration'); ?></strong></p>
+            <ul style="margin-left: 20px;">
+                <li><?php esc_html_e('Map each form field to an Item Code slot (#1, #2, #3, etc.)', 'shift8-gravity-forms-sap-b1-integration'); ?></li>
+                <li><?php esc_html_e('Only items with an Item Code value will be added to the quotation', 'shift8-gravity-forms-sap-b1-integration'); ?></li>
+                <li><?php esc_html_e('Perfect for checkbox fields - only checked items appear in the quotation', 'shift8-gravity-forms-sap-b1-integration'); ?></li>
+                <li><?php esc_html_e('Quantity defaults to 1 if not provided', 'shift8-gravity-forms-sap-b1-integration'); ?></li>
+                <li><?php esc_html_e('The Customer field is automatically set to the newly created Business Partner', 'shift8-gravity-forms-sap-b1-integration'); ?></li>
+            </ul>
+        </div>
+        
+        <table class="widefat">
+            <thead>
+                <tr>
+                    <th><?php esc_html_e('SAP Quotation Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <th><?php esc_html_e('Gravity Form Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <th><?php esc_html_e('SAP Requirements', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($quotation_fields as $quotation_field => $label): ?>
+                    <tr>
+                        <td>
+                            <?php echo esc_html($label); ?>
+                            <?php if (isset($quotation_limits[$quotation_field]['required']) && $quotation_limits[$quotation_field]['required']): ?>
+                                <span style="color: red;">*</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (strpos($quotation_field, 'ItemCode') !== false): ?>
+                                <!-- For ItemCode fields, show form field dropdown AND ItemCode selection -->
+                                <div class="itemcode-mapping-container">
+                                    <div style="margin-bottom: 10px;">
+                                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">
+                                            <?php esc_html_e('Form Field (triggers this line item):', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                                        </label>
+                                        <select name="sap_quotation_field_mapping[<?php echo esc_attr($quotation_field); ?>]" 
+                                                style="min-width: 300px;">
+                                            <option value=""><?php esc_html_e('Select a field', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
+                                            <?php
+                                            foreach ($form['fields'] as $field) {
+                                                $allowed_types = array(
+                                                    'text', 'email', 'phone', 'address', 'name', 'hidden', 'website',
+                                                    'select', 'multiselect', 'radio', 'checkbox', 'textarea', 'number',
+                                                    'date', 'time', 'list', 'fileupload', 'post_title', 'post_content',
+                                                    'post_excerpt', 'post_tags', 'post_category', 'post_image', 'post_custom_field'
+                                                );
+                                                
+                                                if (in_array($field->type, $allowed_types, true)) {
+                                                    $quotation_mapping = rgar($settings, 'quotation_field_mapping');
+                                                    $selected = selected(rgar($quotation_mapping, $quotation_field), $field->id, false);
+                                                    echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
+                                                }
+                                            }
+                                            ?>
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">
+                                            <?php esc_html_e('SAP ItemCode (when field has value):', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                                        </label>
+                                        <select name="sap_quotation_itemcode_mapping[<?php echo esc_attr($quotation_field); ?>]" 
+                                                class="itemcode-dropdown" 
+                                                style="min-width: 300px;">
+                                            <option value=""><?php esc_html_e('Select SAP ItemCode', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
+                                            <?php
+                                            // Check if ItemCodes are already loaded
+                                            $stored_data = get_option('shift8_gravitysap_item_codes_data', array());
+                                            $available_items = !empty($stored_data['items']) ? $stored_data['items'] : array();
+                                            $itemcode_mapping = rgar($settings, 'quotation_itemcode_mapping');
+                                            $selected_item = rgar($itemcode_mapping, $quotation_field);
+                                            
+                                            if (!empty($available_items)) {
+                                                foreach ($available_items as $item_code => $item_name) {
+                                                    $selected = selected($selected_item, $item_code, false);
+                                                    echo '<option value="' . esc_attr($item_code) . '" ' . esc_attr($selected) . '>' . esc_html($item_code . ' - ' . $item_name) . '</option>';
+                                                }
+                                            } elseif (!empty($selected_item)) {
+                                                // Show previously selected item even if not loaded
+                                                echo '<option value="' . esc_attr($selected_item) . '" selected>' . esc_html($selected_item . ' (Previously selected)') . '</option>';
+                                            }
+                                            ?>
+                                        </select>
+                                        <?php if (empty($available_items)): ?>
+                                            <p class="description" style="color: #d63638; margin-top: 5px;">
+                                                <?php esc_html_e('⚠️ Use the "Load ItemCodes" button above to populate this dropdown', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                                            </p>
+                                        <?php endif; ?>
+                                    </div>
+                                    
+                                    <div style="margin-top: 10px;">
+                                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">
+                                            <?php esc_html_e('Unit Price (optional):', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                                        </label>
+                                        <?php
+                                        $price_mapping = rgar($settings, 'quotation_price_mapping', array());
+                                        $current_price = rgar($price_mapping, $quotation_field, '');
+                                        ?>
+                                        <input type="number" 
+                                               name="sap_quotation_price_mapping[<?php echo esc_attr($quotation_field); ?>]" 
+                                               value="<?php echo esc_attr($current_price); ?>"
+                                               step="0.01" 
+                                               min="0" 
+                                               placeholder="0.00"
+                                               style="width: 150px;" />
+                                        <p class="description" style="margin-top: 3px; font-size: 11px; color: #666;">
+                                            <?php esc_html_e('Leave empty to use SAP item master pricing. Set a value to override the price.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                                        </p>
+                                    </div>
+                                    
+                                    <p class="description" style="margin-top: 8px; font-style: italic; color: #666;">
+                                        <?php esc_html_e('When the selected form field has a value, a quotation line will be created with the selected ItemCode.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                                    </p>
+                                </div>
+                            <?php else: ?>
+                                <!-- For non-ItemCode fields, show form field dropdown -->
+                                <select name="sap_quotation_field_mapping[<?php echo esc_attr($quotation_field); ?>]">
+                                    <option value=""><?php esc_html_e('Select a field', 'shift8-gravity-forms-sap-b1-integration'); ?></option>
+                                    <?php
+                                    foreach ($form['fields'] as $field) {
+                                        $allowed_types = array(
+                                            'text', 'email', 'phone', 'address', 'name', 'hidden', 'website',
+                                            'select', 'multiselect', 'radio', 'checkbox', 'textarea', 'number',
+                                            'date', 'time', 'list', 'fileupload', 'post_title', 'post_content',
+                                            'post_excerpt', 'post_tags', 'post_category', 'post_image', 'post_custom_field'
+                                        );
+                                        
+                                        if (in_array($field->type, $allowed_types, true)) {
+                                            $quotation_mapping = rgar($settings, 'quotation_field_mapping');
+                                            $selected = selected(rgar($quotation_mapping, $quotation_field), $field->id, false);
+                                            echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
+                                        }
+                                    }
+                                    ?>
+                                </select>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (isset($quotation_limits[$quotation_field])): ?>
+                                <small style="color: #666;">
+                                    <?php if (isset($quotation_limits[$quotation_field]['max_length'])): ?>
+                                        Max: <?php echo esc_html($quotation_limits[$quotation_field]['max_length']); ?> chars
+                                    <?php endif; ?>
+                                    <?php if (isset($quotation_limits[$quotation_field]['format'])): ?>
+                                        <br>Format: <?php echo esc_html($quotation_limits[$quotation_field]['format']); ?>
+                                    <?php endif; ?>
+                                    <?php if (isset($quotation_limits[$quotation_field]['description'])): ?>
+                                        <br><em><?php echo esc_html($quotation_limits[$quotation_field]['description']); ?></em>
+                                    <?php endif; ?>
+                                </small>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <p class="description">
+            <?php esc_html_e('All fields are optional. Only line items with an Item Code will be included in the quotation.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+            <br><?php esc_html_e('The Customer (CardCode) field is automatically populated with the newly created Business Partner.', 'shift8-gravity-forms-sap-b1-integration'); ?>
         </p>
         <?php
     }
@@ -978,10 +1452,12 @@ class Shift8_GravitySAP {
             'feed_name' => sanitize_text_field(rgpost('sap_feed_name')),
             'card_type' => in_array(rgpost('sap_card_type'), array('cCustomer', 'cSupplier', 'cLid'), true) ? rgpost('sap_card_type') : 'cCustomer',
             'card_code_prefix' => sanitize_text_field(rgpost('sap_card_code_prefix')),
-            'field_mapping' => array()
+            'create_quotation' => rgpost('sap_create_quotation') === '1' ? '1' : '0',
+            'field_mapping' => array(),
+            'quotation_field_mapping' => array()
         );
         
-        // Validate and sanitize field mapping
+        // Validate and sanitize Business Partner field mapping
         $field_mapping = rgpost('sap_field_mapping');
         if (is_array($field_mapping)) {
             $allowed_sap_fields = $this->get_allowed_sap_fields();
@@ -989,6 +1465,48 @@ class Shift8_GravitySAP {
             foreach ($field_mapping as $sap_field => $field_id) {
                 if (in_array($sap_field, $allowed_sap_fields, true) && is_numeric($field_id) && $field_id > 0) {
                     $settings['field_mapping'][$sap_field] = absint($field_id);
+                }
+            }
+        }
+        
+        // Validate and sanitize Sales Quotation field mapping
+        $quotation_mapping = rgpost('sap_quotation_field_mapping');
+        if (is_array($quotation_mapping)) {
+            $allowed_quotation_fields = array_keys($this->get_sap_quotation_fields());
+            
+            foreach ($quotation_mapping as $quotation_field => $field_id) {
+                if (in_array($quotation_field, $allowed_quotation_fields, true) && is_numeric($field_id) && $field_id > 0) {
+                    $settings['quotation_field_mapping'][$quotation_field] = absint($field_id);
+                }
+            }
+        }
+        
+        // Validate and sanitize Sales Quotation ItemCode mapping
+        $quotation_itemcode_mapping = rgpost('sap_quotation_itemcode_mapping');
+        if (is_array($quotation_itemcode_mapping)) {
+            $settings['quotation_itemcode_mapping'] = array();
+            $allowed_quotation_fields = array_keys($this->get_sap_quotation_fields());
+            
+            foreach ($quotation_itemcode_mapping as $quotation_field => $item_code) {
+                if (in_array($quotation_field, $allowed_quotation_fields, true) && !empty($item_code)) {
+                    $settings['quotation_itemcode_mapping'][$quotation_field] = sanitize_text_field($item_code);
+                }
+            }
+        }
+        
+        // Validate and sanitize Sales Quotation Price mapping
+        $quotation_price_mapping = rgpost('sap_quotation_price_mapping');
+        if (is_array($quotation_price_mapping)) {
+            $settings['quotation_price_mapping'] = array();
+            $allowed_quotation_fields = array_keys($this->get_sap_quotation_fields());
+            
+            foreach ($quotation_price_mapping as $quotation_field => $price) {
+                if (in_array($quotation_field, $allowed_quotation_fields, true) && !empty($price)) {
+                    // Validate that price is a valid positive number
+                    $sanitized_price = floatval($price);
+                    if ($sanitized_price >= 0) {
+                        $settings['quotation_price_mapping'][$quotation_field] = $sanitized_price;
+                    }
                 }
             }
         }
@@ -1095,6 +1613,57 @@ class Shift8_GravitySAP {
                     'EntryID' => $entry['id'],
                     'FormID' => $form['id']
                 ));
+                
+                // STEP 8: Create Sales Quotation if enabled
+                if (!empty($settings['create_quotation']) && $settings['create_quotation'] === '1') {
+                    try {
+                        $quotation_result = $this->create_sales_quotation_from_entry($entry, $form, $settings, $result['CardCode'], $sap_service);
+                        
+                        if ($quotation_result && isset($quotation_result['DocEntry'])) {
+                            // Update entry with quotation info
+                            gform_update_meta($entry['id'], 'sap_b1_quotation_docentry', $quotation_result['DocEntry']);
+                            gform_update_meta($entry['id'], 'sap_b1_quotation_docnum', $quotation_result['DocNum'] ?? '');
+                            
+                            // Add quotation note
+                            GFFormsModel::add_note(
+                                $entry['id'], 
+                                0, 
+                                'Shift8 SAP Integration', 
+                                sprintf(
+                                    /* translators: 1: DocNum, 2: DocEntry */
+                                    esc_html__('✅ SUCCESS: Sales Quotation created in SAP B1. Doc #%1$s (Entry: %2$s)', 'shift8-gravity-forms-sap-b1-integration'), 
+                                    esc_html($quotation_result['DocNum'] ?? 'N/A'),
+                                    esc_html($quotation_result['DocEntry'])
+                                )
+                            );
+                            
+                            shift8_gravitysap_debug_log('✅ SAP QUOTATION: Sales Quotation created successfully', array(
+                                'DocEntry' => $quotation_result['DocEntry'],
+                                'DocNum' => $quotation_result['DocNum'] ?? 'N/A',
+                                'CardCode' => $result['CardCode'],
+                                'EntryID' => $entry['id']
+                            ));
+                        }
+                    } catch (Exception $quotation_error) {
+                        // Log quotation error but don't fail the whole submission
+                        shift8_gravitysap_debug_log('⚠️ SAP QUOTATION FAILED (BP was created successfully)', array(
+                            'error' => $quotation_error->getMessage(),
+                            'CardCode' => $result['CardCode'],
+                            'EntryID' => $entry['id']
+                        ));
+                        
+                        GFFormsModel::add_note(
+                            $entry['id'], 
+                            0, 
+                            'Shift8 SAP Integration', 
+                            sprintf(
+                                /* translators: %s: Error message */
+                                esc_html__('⚠️ WARNING: Sales Quotation creation failed: %s (Business Partner was created successfully)', 'shift8-gravity-forms-sap-b1-integration'), 
+                                esc_html($quotation_error->getMessage())
+                            )
+                        );
+                    }
+                }
             } else {
                 throw new Exception('SAP returned success but no CardCode - check SAP logs');
             }
@@ -1134,46 +1703,25 @@ class Shift8_GravitySAP {
      * @param string $error    Error message if failed
      */
     private function update_entry_sap_status($entry_id, $status, $cardcode = '', $error = '') {
-        global $wpdb;
-        
-        $table_name = $wpdb->prefix . 'gf_entry_meta';
-        
-        // Update status
-        $wpdb->replace(
-            $table_name,
-            array(
-                'entry_id' => $entry_id,
-                'meta_key' => 'sap_b1_status',
-                'meta_value' => $status
-            ),
-            array('%d', '%s', '%s')
-        );
+        // Use Gravity Forms native meta functions for proper persistence
+        gform_update_meta($entry_id, 'sap_b1_status', $status);
         
         // Update CardCode if provided
         if (!empty($cardcode)) {
-            $wpdb->replace(
-                $table_name,
-                array(
-                    'entry_id' => $entry_id,
-                    'meta_key' => 'sap_b1_cardcode',
-                    'meta_value' => $cardcode
-                ),
-                array('%d', '%s', '%s')
-            );
+            gform_update_meta($entry_id, 'sap_b1_cardcode', $cardcode);
         }
         
         // Update error if provided
         if (!empty($error)) {
-            $wpdb->replace(
-                $table_name,
-                array(
-                    'entry_id' => $entry_id,
-                    'meta_key' => 'sap_b1_error',
-                    'meta_value' => $error
-                ),
-                array('%d', '%s', '%s')
-            );
+            gform_update_meta($entry_id, 'sap_b1_error', $error);
         }
+        
+        shift8_gravitysap_debug_log('SAP Status Updated', array(
+            'entry_id' => $entry_id,
+            'status' => $status,
+            'cardcode' => $cardcode,
+            'error' => $error
+        ));
     }
 
     /**
@@ -1416,6 +1964,150 @@ class Shift8_GravitySAP {
     }
     
     /**
+     * Create Sales Quotation from entry data
+     *
+     * @since 1.2.2
+     * @param array  $entry       Entry data
+     * @param array  $form        Form data
+     * @param array  $settings    Form settings
+     * @param string $card_code   Business Partner CardCode
+     * @param object $sap_service SAP Service instance
+     * @return array Created quotation data
+     * @throws Exception If creation fails
+     */
+    private function create_sales_quotation_from_entry($entry, $form, $settings, $card_code, $sap_service) {
+        shift8_gravitysap_debug_log('=== STARTING SALES QUOTATION CREATION ===');
+        
+        $quotation_mapping = rgar($settings, 'quotation_field_mapping', array());
+        
+        if (empty($quotation_mapping)) {
+            throw new Exception('No quotation field mapping configured');
+        }
+        
+        // Initialize quotation data
+        $quotation_data = array(
+            'CardCode' => $card_code,
+            'DocumentLines' => array()
+        );
+        
+        // Add Comments if mapped
+        if (!empty($quotation_mapping['Comments'])) {
+            $comments_value = rgar($entry, $quotation_mapping['Comments']);
+            if (!empty($comments_value)) {
+                $quotation_data['Comments'] = $comments_value;
+            }
+        }
+        
+        // Collect line items dynamically
+        $line_items = array();
+        
+        // Loop through all 20 potential item slots
+        for ($i = 1; $i <= 20; $i++) {
+            $item_code_key = "DocumentLines.{$i}.ItemCode";
+            
+            // Check if this slot has an ItemCode mapping
+            if (empty($quotation_mapping[$item_code_key])) {
+                continue; // Skip unmapped slots
+            }
+            
+            // Get the form field ID that triggers this line item
+            $form_field_id = rgar($quotation_mapping, $item_code_key);
+            if (empty($form_field_id)) {
+                continue; // No form field mapped
+            }
+            
+            // Check if the form field has a value in the entry
+            $field_value = rgar($entry, $form_field_id);
+            if (empty($field_value)) {
+                continue; // Form field is empty, skip this line item
+            }
+            
+            // Get the SAP ItemCode for this slot
+            $itemcode_mapping = rgar($settings, 'quotation_itemcode_mapping', array());
+            $sap_item_code = rgar($itemcode_mapping, $item_code_key);
+            if (empty($sap_item_code)) {
+                continue; // No SAP ItemCode configured
+            }
+            
+            // Check if custom price is set for this item
+            $price_mapping = rgar($settings, 'quotation_price_mapping', array());
+            $custom_price = rgar($price_mapping, $item_code_key);
+            
+            // We have both a form field value AND an ItemCode! Build the line item
+            $line_item = array(
+                'ItemCode' => $sap_item_code,
+                'UoMEntry' => 1, // Default UoM entry (usually "Each")
+                'Quantity' => 1.0, // Ensure quantity is always set as float
+                'WarehouseCode' => '01', // Default warehouse (required for display)
+                'LineType' => 'dlt_Regular', // Regular line type (required for display)
+                'TreeType' => 'iProductionTree', // Force production tree type for UI visibility
+                'VatGroup' => '' // Empty VAT group to match working items
+            );
+            
+            // Add custom price if configured, otherwise let SAP auto-populate from item master
+            if (!empty($custom_price) && is_numeric($custom_price) && floatval($custom_price) > 0) {
+                $line_item['UnitPrice'] = floatval($custom_price);
+            }
+            // If no custom price set, SAP B1 will auto-populate UnitPrice from ItemCode master data
+            
+            // Add optional fields for this line item
+            $optional_fields = array('ItemDescription', 'Quantity', 'UnitPrice', 'DiscountPercent', 'TaxCode');
+            
+            foreach ($optional_fields as $field_name) {
+                $field_key = "DocumentLines.{$i}.{$field_name}";
+                
+                if (!empty($quotation_mapping[$field_key])) {
+                    $field_value = rgar($entry, $quotation_mapping[$field_key]);
+                    
+                    if (!empty($field_value)) {
+                        // Convert numeric fields
+                        if (in_array($field_name, array('Quantity', 'UnitPrice', 'DiscountPercent'), true)) {
+                            $field_value = floatval($field_value);
+                        }
+                        
+                        $line_item[$field_name] = $field_value;
+                    }
+                }
+            }
+            
+            // Ensure Quantity is always a float (SAP requirement)
+            if (!isset($line_item['Quantity']) || !is_numeric($line_item['Quantity'])) {
+                $line_item['Quantity'] = 1.0;
+            } else {
+                $line_item['Quantity'] = floatval($line_item['Quantity']);
+            }
+            
+            // Log line item creation with pricing info
+            $price_source = isset($line_item['UnitPrice']) ? 'Custom Price: ' . $line_item['UnitPrice'] : 'SAP Auto-Price';
+            shift8_gravitysap_debug_log('Line item created', array(
+                'ItemCode' => $line_item['ItemCode'],
+                'Quantity' => $line_item['Quantity'],
+                'PriceSource' => $price_source,
+                'FormField' => $item_code_key,
+                'FormFieldValue' => $field_value
+            ));
+            
+            $line_items[] = $line_item;
+        }
+        
+        // Validate we have at least one line item
+        if (empty($line_items)) {
+            throw new Exception('No line items found for quotation (no Item Codes provided)');
+        }
+        
+        $quotation_data['DocumentLines'] = $line_items;
+        
+        shift8_gravitysap_debug_log('Sales Quotation data prepared', array(
+            'CardCode' => $card_code,
+            'LineItemCount' => count($line_items),
+            'QuotationData' => $quotation_data
+        ));
+        
+        // Create the quotation in SAP
+        return $sap_service->create_sales_quotation($quotation_data);
+    }
+    
+    /**
      * Get field label from form data
      *
      * @since 1.1.0
@@ -1450,40 +2142,23 @@ class Shift8_GravitySAP {
             return $entries;
         }
         
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'gf_entry_meta';
-        
         foreach ($entries as &$entry) {
             if (empty($entry['id'])) {
                 continue;
             }
             
-            // Load SAP status
-            $status = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$wpdb->prefix}gf_entry_meta WHERE entry_id = %d AND meta_key = %s",
-                $entry['id'],
-                'sap_b1_status'
-            ));
+            // Load SAP meta using Gravity Forms native functions
+            $status = gform_get_meta($entry['id'], 'sap_b1_status');
             if ($status) {
                 $entry['sap_b1_status'] = $status;
             }
             
-            // Load SAP CardCode
-            $cardcode = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$wpdb->prefix}gf_entry_meta WHERE entry_id = %d AND meta_key = %s",
-                $entry['id'],
-                'sap_b1_cardcode'
-            ));
+            $cardcode = gform_get_meta($entry['id'], 'sap_b1_cardcode');
             if ($cardcode) {
                 $entry['sap_b1_cardcode'] = $cardcode;
             }
             
-            // Load SAP error
-            $error = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$wpdb->prefix}gf_entry_meta WHERE entry_id = %d AND meta_key = %s",
-                $entry['id'],
-                'sap_b1_error'
-            ));
+            $error = gform_get_meta($entry['id'], 'sap_b1_error');
             if ($error) {
                 $entry['sap_b1_error'] = $error;
             }
@@ -1804,23 +2479,91 @@ class Shift8_GravitySAP {
     }
     
     /**
+     * AJAX handler for loading ItemCodes from SAP B1
+     *
+     * @since 1.2.2
+     */
+    public function ajax_load_itemcodes() {
+        // Add debugging
+        error_log('AJAX ITEMCODE: Handler called');
+        
+        // Verify nonce
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? ''));
+        if (!wp_verify_nonce($nonce, 'shift8_gravitysap_load_itemcodes')) {
+            error_log('AJAX ITEMCODE: Nonce verification failed');
+            wp_send_json_error(array('message' => 'Invalid nonce'));
+            return;
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            error_log('AJAX ITEMCODE: Insufficient permissions');
+            wp_send_json_error(array('message' => 'Insufficient permissions'));
+            return;
+        }
+        
+        error_log('AJAX ITEMCODE: Security checks passed');
+        
+        try {
+            // Force refresh ItemCodes
+            $force_refresh = isset($_POST['force_refresh']) && $_POST['force_refresh'] === 'true';
+            
+            // Clear persistent storage if forcing refresh
+            if ($force_refresh) {
+                delete_option('shift8_gravitysap_item_codes_data');
+            }
+            
+            // Load ItemCodes using the existing method
+            $items = $this->get_sap_item_codes();
+            
+            if (empty($items)) {
+                wp_send_json_error(array(
+                    'message' => 'No ItemCodes found. Please check your SAP B1 connection settings.'
+                ));
+                return;
+            }
+            
+            // Get metadata about the stored data
+            $stored_data = get_option('shift8_gravitysap_item_codes_data', array());
+            $last_updated = !empty($stored_data['last_updated_formatted']) ? $stored_data['last_updated_formatted'] : 'Unknown';
+            
+            // Return success with ItemCodes and metadata
+            error_log('AJAX ITEMCODE: Returning success with ' . count($items) . ' items');
+            wp_send_json_success(array(
+                'items' => $items,
+                'count' => count($items),
+                'last_updated' => $last_updated,
+                'storage_type' => 'persistent',
+                'message' => sprintf('Successfully loaded %d ItemCodes from SAP B1 (Last updated: %s)', count($items), $last_updated)
+            ));
+            
+        } catch (Exception $e) {
+            error_log('AJAX ITEMCODE: Exception - ' . $e->getMessage());
+            wp_send_json_error(array(
+                'message' => 'Failed to load ItemCodes: ' . $e->getMessage()
+            ));
+        }
+    }
+    
+    /**
      * Add retry button JavaScript
      *
      * @since 1.1.0
      */
     public function add_retry_button_script() {
         $screen = get_current_screen();
-        if (!$screen || strpos($screen->id, 'gf_entries') === false) {
+        // Load on both entries pages AND settings pages
+        if (!$screen || (strpos($screen->id, 'gf_entries') === false && strpos($screen->id, 'gf_edit_forms') === false)) {
             return;
         }
         ?>
         <script type="text/javascript">
         jQuery(document).ready(function($) {
             // Handle retry button clicks
-            $(document).on('click', '.retry-sap-submission', function(e) {
+            jQuery(document).on('click', '.retry-sap-submission', function(e) {
                 e.preventDefault();
                 
-                var button = $(this);
+                var button = jQuery(this);
                 var entryId = button.data('entry-id');
                 var originalText = button.text();
                 
@@ -1869,6 +2612,146 @@ class Shift8_GravitySAP {
                 });
             });
         });
+        
+        // ItemCode loading functions (load on all admin pages for now)
+        <?php if (is_admin()): ?>
+        
+        console.log('ItemCode JavaScript loaded on:', window.location.href);
+        
+        // Global function to load ALL ItemCodes (master button)
+        window.loadAllItemCodes = function(forceRefresh = false) {
+            console.log('loadAllItemCodes called with forceRefresh:', forceRefresh);
+            
+            var loadButton = jQuery('.load-all-itemcodes-btn');
+            var reloadButton = jQuery('.reload-all-itemcodes-btn');
+            var status = jQuery('.itemcode-global-status');
+            var dropdowns = jQuery('.itemcode-dropdown');
+            
+            console.log('Found elements:', {
+                loadButton: loadButton.length,
+                reloadButton: reloadButton.length,
+                status: status.length,
+                dropdowns: dropdowns.length
+            });
+            
+            // Disable buttons and show loading
+            loadButton.prop('disabled', true).html('<span class="dashicons dashicons-update dashicons-spin" style="vertical-align: middle;"></span> Loading...');
+            reloadButton.prop('disabled', true).html('<span class="dashicons dashicons-update dashicons-spin" style="vertical-align: middle;"></span> Loading...');
+            status.text('Loading ItemCodes from SAP B1...');
+            
+            console.log('Making AJAX request to:', ajaxurl);
+            
+            // Make AJAX request
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'load_itemcodes',
+                    force_refresh: forceRefresh ? 'true' : 'false',
+                    nonce: '<?php echo wp_create_nonce('shift8_gravitysap_load_itemcodes'); ?>'
+                },
+                timeout: 30000, // 30 second timeout
+                success: function(response) {
+                    console.log('AJAX response:', response);
+                    
+                    // Handle case where response is not JSON
+                    if (typeof response === 'string') {
+                        try {
+                            response = JSON.parse(response);
+                        } catch (e) {
+                            console.log('Failed to parse response as JSON:', response);
+                            status.html('<span style="color: #d63638;">❌ Invalid response from server</span>');
+                            loadButton.prop('disabled', false).html('<span class="dashicons dashicons-download" style="vertical-align: middle;"></span> Load ItemCodes from SAP B1');
+                            reloadButton.prop('disabled', false).html('<span class="dashicons dashicons-update" style="vertical-align: middle;"></span> Reload ItemCodes');
+                            return;
+                        }
+                    }
+                    
+                    if (response && response.success) {
+                        // Update all ItemCode dropdowns
+                        dropdowns.each(function() {
+                            var dropdown = jQuery(this);
+                            var selectedValue = dropdown.val();
+                            
+                            // Clear existing options (except first)
+                            dropdown.find('option:not(:first)').remove();
+                            
+                            // Add new options
+                            jQuery.each(response.data.items, function(itemCode, itemName) {
+                                var selected = selectedValue === itemCode ? 'selected' : '';
+                                dropdown.append('<option value="' + itemCode + '" ' + selected + '>' + itemCode + ' - ' + itemName + '</option>');
+                            });
+                        });
+                        
+                        // Remove warning messages from individual fields
+                        jQuery('.itemcode-dropdown').next('p.description').remove();
+                        
+                        // Update the management section to show loaded state
+                        jQuery('.itemcode-status-section').html(
+                            '<p style="margin: 10px 0;">' +
+                            '<span class="dashicons dashicons-yes-alt" style="color: #00a32a; vertical-align: middle;"></span> ' +
+                            '✅ ' + response.data.count + ' ItemCodes loaded and ready for mapping' +
+                            '</p>' +
+                            '<button type="button" class="button button-secondary reload-all-itemcodes-btn" onclick="loadAllItemCodes(true)" style="margin-right: 10px;">' +
+                            '<span class="dashicons dashicons-update" style="vertical-align: middle;"></span> Reload ItemCodes' +
+                            '</button>' +
+                            '<input type="text" class="itemcode-global-search" placeholder="Search all ItemCodes..." onkeyup="filterAllItemCodes(this.value)" style="width: 250px; margin-right: 10px;">' +
+                            '<span class="itemcode-global-status" style="color: #00a32a;">Last updated: ' + new Date().toLocaleString() + '</span>'
+                        );
+                        
+                    } else {
+                        status.html('<span style="color: #d63638;">❌ ' + response.data.message + '</span>');
+                        loadButton.prop('disabled', false).html('<span class="dashicons dashicons-download" style="vertical-align: middle;"></span> Load ItemCodes from SAP B1');
+                        reloadButton.prop('disabled', false).html('<span class="dashicons dashicons-update" style="vertical-align: middle;"></span> Reload ItemCodes');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.log('AJAX error:', {xhr: xhr, status: status, error: error, responseText: xhr.responseText});
+                    
+                    var errorMessage = 'Network error occurred';
+                    if (status === 'timeout') {
+                        errorMessage = 'Request timed out (30s) - SAP may be slow';
+                    } else if (status === 'parsererror') {
+                        errorMessage = 'Invalid response from server';
+                    } else if (xhr.status === 403) {
+                        errorMessage = 'Permission denied - check user capabilities';
+                    } else if (xhr.status === 500) {
+                        errorMessage = 'Server error - check error logs';
+                    } else if (xhr.status !== 0) {
+                        errorMessage = 'HTTP ' + xhr.status + ' error';
+                    }
+                    
+                    status.html('<span style="color: #d63638;">❌ ' + errorMessage + '</span>');
+                    loadButton.prop('disabled', false).html('<span class="dashicons dashicons-download" style="vertical-align: middle;"></span> Load ItemCodes from SAP B1');
+                    reloadButton.prop('disabled', false).html('<span class="dashicons dashicons-update" style="vertical-align: middle;"></span> Reload ItemCodes');
+                },
+                complete: function() {
+                    console.log('AJAX request completed');
+                }
+            });
+        };
+        
+        // Global function to filter ALL ItemCodes
+        window.filterAllItemCodes = function(searchTerm) {
+            searchTerm = searchTerm.toLowerCase();
+            
+            jQuery('.itemcode-dropdown').each(function() {
+                var dropdown = jQuery(this);
+                dropdown.find('option').each(function() {
+                    var option = jQuery(this);
+                    var text = option.text().toLowerCase();
+                    
+                    if (text.indexOf(searchTerm) !== -1 || option.val() === '') {
+                        option.show();
+                    } else {
+                        option.hide();
+                    }
+                });
+            });
+        };
+        
+        <?php endif; ?>
+        
         </script>
         <?php
     }
