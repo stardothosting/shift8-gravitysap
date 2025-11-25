@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.2.4
+* Stable tag: 1.2.5
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -79,6 +79,20 @@ Common solutions:
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.2.5 =
+* **NEW FEATURE**: Implemented full pagination support for SAP B1 Items API
+* **FIX**: Resolved issue where only 20 ItemCodes were loading (now loads all 1,995+ items)
+* **ENHANCEMENT**: Added pagination loop with $skip parameter to fetch all items across multiple pages
+* **ENHANCEMENT**: Added spinning wheel animation and progress indicators for long-running operations
+* **ENHANCEMENT**: Extended AJAX timeout to 60 seconds and PHP execution time to 120 seconds
+* **ENHANCEMENT**: Added comprehensive debug logging for pagination progress
+* **ENHANCEMENT**: Implemented caching to avoid repeated pagination on subsequent loads
+* **FIX**: Removed duplicate create_sales_quotation() method in SAP service class
+* **TESTING**: Added 8 new pagination tests - all 93 tests passing (213 assertions)
+* **DOCUMENTATION**: Updated .cursorrules with apiPagination section documenting SAP B1 pagination requirements
+* **PERFORMANCE**: Load time 30-60 seconds for first load, instant for cached loads
+* **STABILITY**: Safety limit of 3,000 items to prevent infinite loops
 
 = 1.2.4 =
 * **TESTING**: All 85 unit tests pass successfully - comprehensive test coverage verified

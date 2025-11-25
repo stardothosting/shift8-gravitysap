@@ -4,11 +4,12 @@
 This document summarizes the test coverage for the Shift8 Gravity Forms to SAP Business One integration plugin, with special focus on lessons learned about SAP B1 numbering series and CardCode prefixes.
 
 ## Test Statistics
-- **Total Tests**: 90
-- **Total Assertions**: 214
-- **Test Files**: 5
-- **Coverage Areas**: SAP Service, Main Plugin, Admin Interface, Helper Functions, Numbering Series, Field Mapping
+- **Total Tests**: 93
+- **Total Assertions**: 213
+- **Test Files**: 7
+- **Coverage Areas**: SAP Service, Main Plugin, Admin Interface, Helper Functions, Numbering Series, Field Mapping, **ItemCode Pagination**
 - **E2E Testing**: WP-CLI command for end-to-end submission testing with SAP verification
+- **Last Test Run**: 2025-11-25 - ✅ All tests passing
 
 ## New Test Suites Added
 
@@ -70,6 +71,31 @@ Tests admin interface, settings pages, AJAX handlers, and user interface compone
 
 ### 6. HelperFunctionsTest.php (10 tests)
 Tests helper functions for encryption, debugging, and utility operations.
+
+### 7. ItemCodePaginationTest.php (8 tests) **NEW**
+**Purpose**: Tests the pagination functionality for fetching all ItemCodes from SAP B1
+
+**Key Tests**:
+- `test_pagination_single_page` - Tests fetching < 20 items (single page)
+- `test_pagination_multiple_pages` - Tests fetching 40 items across 2 pages
+- `test_pagination_large_dataset` - Tests fetching 216+ items (real-world scenario)
+- `test_pagination_max_items_limit` - Tests safety limit of 3000 items
+- `test_pagination_empty_results` - Tests handling of empty result sets
+- `test_pagination_partial_last_page` - Tests 25 items (20 + 5 partial page)
+- `test_pagination_handles_api_error` - Tests error handling mid-pagination
+- `test_specific_item_search` - Tests finding specific items like "CS-Designer Suede Full"
+
+**Critical Lessons Tested**:
+1. **SAP B1 Server-Side Pagination**: SAP B1 Service Layer limits responses to 20 items per request regardless of `$top` parameter
+2. **Skip Parameter**: Must use `$skip` parameter to paginate through all results
+3. **Partial Page Detection**: Pagination stops when receiving fewer items than page size
+4. **Safety Limits**: Implements max items limit (3000) to prevent infinite loops
+5. **Error Recovery**: Gracefully handles API errors mid-pagination and returns partial results
+
+**Real-World Impact**:
+- **Before**: Only 20 items loaded from SAP B1 (first page only)
+- **After**: All 1,995+ valid items loaded across ~100 pages
+- **Performance**: 30-60 seconds for large datasets with proper progress indicators
 
 ## End-to-End Testing with WP-CLI
 

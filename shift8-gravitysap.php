@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.2.4
+ * Version: 1.2.5
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.2.4');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.2.5');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -400,7 +400,8 @@ class Shift8_GravitySAP {
             $test_result = $this->test_sap_integration($form);
             
             if ($test_result['success']) {
-                GFCommon::add_message(esc_html__('Test successful! Business Partner created in SAP: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
+                // Message is already escaped in the SAP service, don't double-escape
+                GFCommon::add_message(esc_html__('Test successful! Business Partner created in SAP: ', 'shift8-gravity-forms-sap-b1-integration') . $test_result['message']);
             } else {
                 GFCommon::add_error_message(esc_html__('Test failed: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
             }
@@ -875,33 +876,61 @@ class Shift8_GravitySAP {
             $method = $reflection->getMethod('make_request');
             $method->setAccessible(true);
             
-            // Query for items (limit to 100 for performance, only active items)
-            $response = $method->invoke($sap_service, 'GET', '/Items?$top=100&$select=ItemCode,ItemName&$filter=Valid eq \'Y\'&$orderby=ItemCode');
-            
-            if (is_wp_error($response)) {
-                // Return existing cached data if request fails
-                return !empty($stored_data['items']) ? $stored_data['items'] : array();
-            }
-            
-            $response_code = wp_remote_retrieve_response_code($response);
-            if ($response_code !== 200) {
-                // Return existing cached data if request fails
-                return !empty($stored_data['items']) ? $stored_data['items'] : array();
-            }
-            
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            
-            if (!isset($data['value']) || !is_array($data['value'])) {
-                // Return existing cached data if response is invalid
-                return !empty($stored_data['items']) ? $stored_data['items'] : array();
-            }
-            
+            // SAP B1 has a server-side pagination limit (typically 20 items per request)
+            // We need to paginate through all items using $skip
             $items = array();
-            foreach ($data['value'] as $item) {
-                if (!empty($item['ItemCode'])) {
-                    $items[$item['ItemCode']] = $item['ItemName'] ?? $item['ItemCode'];
+            $page_size = 20; // SAP B1's default page size
+            $skip = 0;
+            $total_fetched = 0;
+            $max_items = 3000; // Safety limit to prevent infinite loops
+            
+            shift8_gravitysap_debug_log('Starting paginated ItemCode fetch', array('page_size' => $page_size));
+            
+            while ($total_fetched < $max_items) {
+                // Query for items with pagination
+                $query = "/Items?\$top={$page_size}&\$skip={$skip}&\$select=ItemCode,ItemName&\$filter=Valid eq 'Y'&\$orderby=ItemCode";
+                $response = $method->invoke($sap_service, 'GET', $query);
+                
+                if (is_wp_error($response)) {
+                    shift8_gravitysap_debug_log('ItemCode fetch failed at skip=' . $skip, array('error' => $response->get_error_message()));
+                    break;
                 }
+                
+                $response_code = wp_remote_retrieve_response_code($response);
+                if ($response_code !== 200) {
+                    shift8_gravitysap_debug_log('ItemCode fetch failed with status ' . $response_code . ' at skip=' . $skip);
+                    break;
+                }
+                
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                
+                if (!isset($data['value']) || !is_array($data['value']) || empty($data['value'])) {
+                    // No more items to fetch
+                    shift8_gravitysap_debug_log('No more items at skip=' . $skip);
+                    break;
+                }
+                
+                // Add items from this page
+                $page_count = 0;
+                foreach ($data['value'] as $item) {
+                    if (!empty($item['ItemCode'])) {
+                        $items[$item['ItemCode']] = $item['ItemName'] ?? $item['ItemCode'];
+                        $page_count++;
+                    }
+                }
+                
+                $total_fetched += $page_count;
+                shift8_gravitysap_debug_log("Fetched page at skip={$skip}", array('items_in_page' => $page_count, 'total_so_far' => $total_fetched));
+                
+                // If we got fewer items than page_size, we've reached the end
+                if ($page_count < $page_size) {
+                    shift8_gravitysap_debug_log('Reached end of items (partial page)', array('final_count' => $total_fetched));
+                    break;
+                }
+                
+                // Move to next page
+                $skip += $page_size;
             }
             
             // Store persistently with metadata
@@ -910,18 +939,34 @@ class Shift8_GravitySAP {
                 'last_updated' => current_time('timestamp'),
                 'last_updated_formatted' => current_time('mysql'),
                 'count' => count($items),
+                'pages_fetched' => ceil($total_fetched / $page_size),
                 'source' => 'sap_api'
             );
             
             update_option($option_key, $new_data);
             
-            // Log success for debugging
+            // Log success with detailed debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
+                // Check if the specific test item exists
+                $test_item_found = false;
+                $test_item_key = '';
+                foreach ($items as $code => $name) {
+                    if (stripos($name, 'CS-Designer Suede Full') !== false || stripos($code, 'CS-Designer Suede Full') !== false) {
+                        $test_item_found = true;
+                        $test_item_key = $code;
+                        break;
+                    }
+                }
+                
                 shift8_gravitysap_debug_log('ItemCodes loaded and stored persistently', array(
-                    'count' => count($items),
+                    'total_count' => count($items),
+                    'pages_fetched' => ceil($total_fetched / $page_size),
+                    'items_per_page' => $page_size,
                     'force_refresh' => $force_refresh,
                     'storage' => 'wp_options',
-                    'sample_items' => array_slice($items, 0, 3, true) // First 3 items for debugging
+                    'first_5_items' => array_slice($items, 0, 5, true),
+                    'last_5_items' => array_slice($items, -5, 5, true),
+                    'test_item_CS_Designer_Suede_Full' => $test_item_found ? "FOUND: {$test_item_key} = {$items[$test_item_key]}" : 'NOT FOUND in ' . count($items) . ' items'
                 ));
             }
             
@@ -1844,7 +1889,13 @@ class Shift8_GravitySAP {
                 $address_field = str_replace('BPAddresses.', '', $sap_field);
                 
                 if (!isset($business_partner['BPAddresses'])) {
-                    $business_partner['BPAddresses'] = array(array('AddressType' => 'bo_BillTo'));
+                    // Initialize with required fields for SAP Business One
+                    // AddressName is REQUIRED for SAP to save the address properly
+                    $business_partner['BPAddresses'] = array(array(
+                        'AddressType' => 'bo_BillTo',
+                        'AddressName' => 'Primary', // Required field
+                        'RowNum' => 0
+                    ));
                 }
                 $business_partner['BPAddresses'][0][$address_field] = $field_value;
             }
@@ -2484,13 +2535,18 @@ class Shift8_GravitySAP {
      * @since 1.2.2
      */
     public function ajax_load_itemcodes() {
+        // Increase execution time for large datasets
+        set_time_limit(120); // 2 minutes
+        
         // Add debugging
         error_log('AJAX ITEMCODE: Handler called');
+        shift8_gravitysap_debug_log('AJAX ItemCode loading started');
         
         // Verify nonce
         $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? ''));
         if (!wp_verify_nonce($nonce, 'shift8_gravitysap_load_itemcodes')) {
             error_log('AJAX ITEMCODE: Nonce verification failed');
+            shift8_gravitysap_debug_log('ItemCode loading failed: Invalid nonce');
             wp_send_json_error(array('message' => 'Invalid nonce'));
             return;
         }
@@ -2498,11 +2554,13 @@ class Shift8_GravitySAP {
         // Check user capabilities
         if (!current_user_can('manage_options')) {
             error_log('AJAX ITEMCODE: Insufficient permissions');
+            shift8_gravitysap_debug_log('ItemCode loading failed: Insufficient permissions');
             wp_send_json_error(array('message' => 'Insufficient permissions'));
             return;
         }
         
         error_log('AJAX ITEMCODE: Security checks passed');
+        shift8_gravitysap_debug_log('ItemCode loading: Security checks passed');
         
         try {
             // Force refresh ItemCodes
@@ -2511,12 +2569,14 @@ class Shift8_GravitySAP {
             // Clear persistent storage if forcing refresh
             if ($force_refresh) {
                 delete_option('shift8_gravitysap_item_codes_data');
+                shift8_gravitysap_debug_log('Cleared ItemCode cache for forced refresh');
             }
             
             // Load ItemCodes using the existing method
             $items = $this->get_sap_item_codes();
             
             if (empty($items)) {
+                shift8_gravitysap_debug_log('No ItemCodes returned from SAP');
                 wp_send_json_error(array(
                     'message' => 'No ItemCodes found. Please check your SAP B1 connection settings.'
                 ));
@@ -2526,15 +2586,22 @@ class Shift8_GravitySAP {
             // Get metadata about the stored data
             $stored_data = get_option('shift8_gravitysap_item_codes_data', array());
             $last_updated = !empty($stored_data['last_updated_formatted']) ? $stored_data['last_updated_formatted'] : 'Unknown';
+            $pages_fetched = !empty($stored_data['pages_fetched']) ? $stored_data['pages_fetched'] : 0;
             
             // Return success with ItemCodes and metadata
             error_log('AJAX ITEMCODE: Returning success with ' . count($items) . ' items');
+            shift8_gravitysap_debug_log('AJAX ItemCode loading completed successfully', array(
+                'total_items' => count($items),
+                'pages_fetched' => $pages_fetched
+            ));
+            
             wp_send_json_success(array(
                 'items' => $items,
                 'count' => count($items),
+                'pages_fetched' => $pages_fetched,
                 'last_updated' => $last_updated,
                 'storage_type' => 'persistent',
-                'message' => sprintf('Successfully loaded %d ItemCodes from SAP B1 (Last updated: %s)', count($items), $last_updated)
+                'message' => sprintf('Successfully loaded %d ItemCodes from SAP B1 in %d pages (Last updated: %s)', count($items), $pages_fetched, $last_updated)
             ));
             
         } catch (Exception $e) {
@@ -2616,6 +2683,11 @@ class Shift8_GravitySAP {
         // ItemCode loading functions (load on all admin pages for now)
         <?php if (is_admin()): ?>
         
+        // Add CSS for spinning animation
+        var style = document.createElement('style');
+        style.textContent = '@keyframes rotation { from { transform: rotate(0deg); } to { transform: rotate(359deg); } }';
+        document.head.appendChild(style);
+        
         console.log('ItemCode JavaScript loaded on:', window.location.href);
         
         // Global function to load ALL ItemCodes (master button)
@@ -2634,10 +2706,10 @@ class Shift8_GravitySAP {
                 dropdowns: dropdowns.length
             });
             
-            // Disable buttons and show loading
-            loadButton.prop('disabled', true).html('<span class="dashicons dashicons-update dashicons-spin" style="vertical-align: middle;"></span> Loading...');
-            reloadButton.prop('disabled', true).html('<span class="dashicons dashicons-update dashicons-spin" style="vertical-align: middle;"></span> Loading...');
-            status.text('Loading ItemCodes from SAP B1...');
+            // Disable buttons and show loading with animation
+            loadButton.prop('disabled', true).html('<span class="dashicons dashicons-update" style="vertical-align: middle; animation: rotation 2s infinite linear;"></span> Loading...');
+            reloadButton.prop('disabled', true).html('<span class="dashicons dashicons-update" style="vertical-align: middle; animation: rotation 2s infinite linear;"></span> Loading...');
+            status.html('<span class="dashicons dashicons-update" style="vertical-align: middle; animation: rotation 2s infinite linear;"></span> Loading ItemCodes from SAP B1... This may take 30-60 seconds for large datasets.');
             
             console.log('Making AJAX request to:', ajaxurl);
             
@@ -2650,7 +2722,7 @@ class Shift8_GravitySAP {
                     force_refresh: forceRefresh ? 'true' : 'false',
                     nonce: '<?php echo wp_create_nonce('shift8_gravitysap_load_itemcodes'); ?>'
                 },
-                timeout: 30000, // 30 second timeout
+                timeout: 60000, // 60 second timeout (increased for larger datasets)
                 success: function(response) {
                     console.log('AJAX response:', response);
                     
@@ -2687,10 +2759,11 @@ class Shift8_GravitySAP {
                         jQuery('.itemcode-dropdown').next('p.description').remove();
                         
                         // Update the management section to show loaded state
+                        var pagesInfo = response.data.pages_fetched ? ' (fetched in ' + response.data.pages_fetched + ' pages)' : '';
                         jQuery('.itemcode-status-section').html(
                             '<p style="margin: 10px 0;">' +
                             '<span class="dashicons dashicons-yes-alt" style="color: #00a32a; vertical-align: middle;"></span> ' +
-                            '✅ ' + response.data.count + ' ItemCodes loaded and ready for mapping' +
+                            'Successfully loaded <strong>' + response.data.count + '</strong> ItemCodes from SAP B1' + pagesInfo +
                             '</p>' +
                             '<button type="button" class="button button-secondary reload-all-itemcodes-btn" onclick="loadAllItemCodes(true)" style="margin-right: 10px;">' +
                             '<span class="dashicons dashicons-update" style="vertical-align: middle;"></span> Reload ItemCodes' +
@@ -3109,7 +3182,13 @@ class Shift8_GravitySAP {
                 $address_field = str_replace('BPAddresses.', '', $sap_field);
                 
                 if (!isset($business_partner['BPAddresses'])) {
-                    $business_partner['BPAddresses'] = array(array('AddressType' => 'bo_BillTo'));
+                    // Initialize with required fields for SAP Business One
+                    // AddressName is REQUIRED for SAP to save the address properly
+                    $business_partner['BPAddresses'] = array(array(
+                        'AddressType' => 'bo_BillTo',
+                        'AddressName' => 'Primary', // Required field
+                        'RowNum' => 0
+                    ));
                 }
                 
                 $business_partner['BPAddresses'][0][$address_field] = $test_value;
