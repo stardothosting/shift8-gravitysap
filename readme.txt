@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.2.5
+* Stable tag: 1.3.0
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -79,6 +79,13 @@ Common solutions:
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.3.0 =
+* **ENHANCEMENT**: Improved SAP B1 API integration and data handling
+* **ENHANCEMENT**: Enhanced user interface and progress indicators
+* **FIX**: Various bug fixes and performance improvements
+* **TESTING**: Expanded test coverage with additional unit tests
+* **STABILITY**: Code optimization and cleanup for production deployment
 
 = 1.2.5 =
 * **NEW FEATURE**: Implemented full pagination support for SAP B1 Items API
