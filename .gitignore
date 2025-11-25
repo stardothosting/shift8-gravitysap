@@ -59,3 +59,5 @@ svn/
 
 #Ignore cursor AI rules
 .cursor/rules/codacy.mdc
+.cursorignore
+.codacy

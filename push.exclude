@@ -2,6 +2,8 @@
 .git
 .gitignore
 .cursorrules
+.cursorignore
+.codacy
 # assets (moved to ../wordpress-org-assets/)
 LICENSE
 README.md
