@@ -61,3 +61,4 @@ svn/
 .cursor/rules/codacy.mdc
 .cursorignore
 .codacy
+/.cursor

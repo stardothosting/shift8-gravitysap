@@ -3,6 +3,7 @@
 .gitignore
 .cursorrules
 .cursorignore
+.cursor/
 .codacy
 # assets (moved to ../wordpress-org-assets/)
 LICENSE
