@@ -15,6 +15,8 @@ Integrates Gravity Forms with SAP Business One to automatically create Business 
 
 A secure WordPress plugin that integrates Gravity Forms with SAP Business One, automatically creating Business Partner records from form submissions.
 
+For a complete setup guide and technical walkthrough, see our blog post: [How to integrate SAP B1 (Business One) into WordPress Gravity Forms](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)
+
 = Features =
 
 * **Seamless Integration**: Direct integration with SAP Business One Service Layer API

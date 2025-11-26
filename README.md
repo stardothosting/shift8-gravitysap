@@ -2,6 +2,8 @@
 
 A secure WordPress plugin that integrates Gravity Forms with SAP Business One, automatically creating Business Partner records from form submissions.
 
+**📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
+
 [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
