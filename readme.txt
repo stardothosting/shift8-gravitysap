@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.3.0
+* Stable tag: 1.3.1
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -73,6 +73,28 @@ Common solutions:
 3. Ensure default series are configured
 4. Test using the built-in numbering series test tool
 
+= How do I use checkbox fields for Sales Quotation line items? =
+
+Checkbox fields are perfect for product selection forms. Each checkbox option becomes a separate mappable field:
+
+**Example:** If you have a checkbox field "Select Products" with options "Product A", "Product B", "Product C", they will appear in the field mapping as:
+* "Select Products → Product A" (Field ID: 15.1)
+* "Select Products → Product B" (Field ID: 15.2)
+* "Select Products → Product C" (Field ID: 15.3)
+
+**To configure:**
+1. Enable "Automatically create a sales quotation in SAP B1" in form settings
+2. Click "Load ItemCodes from SAP B1" to load available products
+3. Map each DocumentLines slot to a specific checkbox option
+4. Select the corresponding SAP ItemCode for each slot
+
+**How it works:**
+* Checked boxes → Line items are created in the Sales Quotation
+* Unchecked boxes → Skipped (no line item)
+* The quotation is automatically linked to the Business Partner
+
+This is ideal for sample request forms, multi-product orders, and service selection forms.
+
 == Screenshots ==
 
 1. Main settings page with SAP connection configuration
@@ -82,10 +104,20 @@ Common solutions:
 
 == Changelog ==
 
+= 1.3.1 =
+* **FIX**: Removed temporary debug logging statements
+* **CLEANUP**: Removed scenario-specific business logic functions
+* **STABILITY**: Code cleanup and optimization for production deployment
+
 = 1.3.0 =
+* **NEW FEATURE**: Sales Quotation creation with checkbox field mapping support
+* **ENHANCEMENT**: Dynamic line item mapping for Sales Quotations
 * **ENHANCEMENT**: Improved SAP B1 API integration and data handling
 * **ENHANCEMENT**: Enhanced user interface and progress indicators
+* **FIX**: Fixed checkbox sub-field value detection for Sales Quotations
+* **FIX**: Fixed field mapping persistence for sub-field IDs (e.g., 15.1, 15.2)
 * **FIX**: Various bug fixes and performance improvements
+* **TESTING**: Added 6 new tests for checkbox field mapping functionality
 * **TESTING**: Expanded test coverage with additional unit tests
 * **STABILITY**: Code optimization and cleanup for production deployment
 

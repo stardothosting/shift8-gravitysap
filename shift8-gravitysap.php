@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.3.0');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.3.1');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1192,8 +1192,22 @@ class Shift8_GravitySAP {
                                                 
                                                 if (in_array($field->type, $allowed_types, true)) {
                                                     $quotation_mapping = rgar($settings, 'quotation_field_mapping');
-                                                    $selected = selected(rgar($quotation_mapping, $quotation_field), $field->id, false);
-                                                    echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
+                                                    
+                                                    // For checkbox fields, show individual checkbox options as separate mappable fields
+                                                    if ($field->type === 'checkbox' && !empty($field->choices)) {
+                                                        $field_label = GFCommon::get_label($field);
+                                                        foreach ($field->choices as $index => $choice) {
+                                                            $input_id = $field->id . '.' . ($index + 1);
+                                                            $choice_label = !empty($choice['text']) ? $choice['text'] : $choice['label'];
+                                                            $selected = selected(rgar($quotation_mapping, $quotation_field), $input_id, false);
+                                                            echo '<option value="' . esc_attr($input_id) . '" ' . esc_attr($selected) . '>' . 
+                                                                 esc_html($field_label . ' → ' . $choice_label) . '</option>';
+                                                        }
+                                                    } else {
+                                                        // For non-checkbox fields, show the field normally
+                                                        $selected = selected(rgar($quotation_mapping, $quotation_field), $field->id, false);
+                                                        echo '<option value="' . esc_attr($field->id) . '" ' . esc_attr($selected) . '>' . esc_html(GFCommon::get_label($field)) . '</option>';
+                                                    }
                                                 }
                                             }
                                             ?>
@@ -1508,8 +1522,12 @@ class Shift8_GravitySAP {
             $allowed_sap_fields = $this->get_allowed_sap_fields();
             
             foreach ($field_mapping as $sap_field => $field_id) {
-                if (in_array($sap_field, $allowed_sap_fields, true) && is_numeric($field_id) && $field_id > 0) {
-                    $settings['field_mapping'][$sap_field] = absint($field_id);
+                // Support both integer field IDs (e.g., "15") and sub-field IDs (e.g., "15.1" for checkbox options)
+                if (in_array($sap_field, $allowed_sap_fields, true) && !empty($field_id)) {
+                    // Validate format: either integer or decimal (e.g., "15" or "15.1")
+                    if (preg_match('/^\d+(\.\d+)?$/', $field_id)) {
+                        $settings['field_mapping'][$sap_field] = sanitize_text_field($field_id);
+                    }
                 }
             }
         }
@@ -1520,8 +1538,12 @@ class Shift8_GravitySAP {
             $allowed_quotation_fields = array_keys($this->get_sap_quotation_fields());
             
             foreach ($quotation_mapping as $quotation_field => $field_id) {
-                if (in_array($quotation_field, $allowed_quotation_fields, true) && is_numeric($field_id) && $field_id > 0) {
-                    $settings['quotation_field_mapping'][$quotation_field] = absint($field_id);
+                // Support both integer field IDs (e.g., "15") and sub-field IDs (e.g., "15.1" for checkbox options)
+                if (in_array($quotation_field, $allowed_quotation_fields, true) && !empty($field_id)) {
+                    // Validate format: either integer or decimal (e.g., "15" or "15.1")
+                    if (preg_match('/^\d+(\.\d+)?$/', $field_id)) {
+                        $settings['quotation_field_mapping'][$quotation_field] = sanitize_text_field($field_id);
+                    }
                 }
             }
         }
@@ -2030,6 +2052,13 @@ class Shift8_GravitySAP {
         shift8_gravitysap_debug_log('=== STARTING SALES QUOTATION CREATION ===');
         
         $quotation_mapping = rgar($settings, 'quotation_field_mapping', array());
+        $itemcode_mapping = rgar($settings, 'quotation_itemcode_mapping', array());
+        
+        shift8_gravitysap_debug_log('Quotation configuration', array(
+            'quotation_field_mapping' => $quotation_mapping,
+            'itemcode_mapping' => $itemcode_mapping,
+            'entry_id' => $entry['id']
+        ));
         
         if (empty($quotation_mapping)) {
             throw new Exception('No quotation field mapping configured');
@@ -2064,12 +2093,18 @@ class Shift8_GravitySAP {
             // Get the form field ID that triggers this line item
             $form_field_id = rgar($quotation_mapping, $item_code_key);
             if (empty($form_field_id)) {
+                shift8_gravitysap_debug_log("Line item slot $i: No form field mapped", array('item_code_key' => $item_code_key));
                 continue; // No form field mapped
             }
             
             // Check if the form field has a value in the entry
             $field_value = rgar($entry, $form_field_id);
+            
             if (empty($field_value)) {
+                shift8_gravitysap_debug_log("Line item slot $i: Form field has no value", array(
+                    'form_field_id' => $form_field_id,
+                    'item_code_key' => $item_code_key
+                ));
                 continue; // Form field is empty, skip this line item
             }
             
@@ -2077,8 +2112,20 @@ class Shift8_GravitySAP {
             $itemcode_mapping = rgar($settings, 'quotation_itemcode_mapping', array());
             $sap_item_code = rgar($itemcode_mapping, $item_code_key);
             if (empty($sap_item_code)) {
+                shift8_gravitysap_debug_log("Line item slot $i: No SAP ItemCode configured", array(
+                    'form_field_id' => $form_field_id,
+                    'field_value' => $field_value,
+                    'item_code_key' => $item_code_key
+                ));
                 continue; // No SAP ItemCode configured
             }
+            
+            shift8_gravitysap_debug_log("Line item slot $i: Valid line item found!", array(
+                'form_field_id' => $form_field_id,
+                'field_value' => $field_value,
+                'sap_item_code' => $sap_item_code,
+                'item_code_key' => $item_code_key
+            ));
             
             // Check if custom price is set for this item
             $price_mapping = rgar($settings, 'quotation_price_mapping', array());
@@ -2148,6 +2195,7 @@ class Shift8_GravitySAP {
         
         $quotation_data['DocumentLines'] = $line_items;
         
+        // TEMPORARY: Log to PHP error log regardless of WP_DEBUG        
         shift8_gravitysap_debug_log('Sales Quotation data prepared', array(
             'CardCode' => $card_code,
             'LineItemCount' => count($line_items),
@@ -2288,149 +2336,6 @@ class Shift8_GravitySAP {
     }
     
     /**
-     * Get combined first and last name
-     */
-    private function get_combined_name($entry, $form) {
-        $settings = rgar($form, 'sap_integration_settings', array());
-        $field_mapping = rgar($settings, 'field_mapping', array());
-        
-        // Debug logging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('DEBUG: get_combined_name - Field mapping: ' . print_r($field_mapping, true));
-            error_log('DEBUG: get_combined_name - Entry data: ' . print_r($entry, true));
-        }
-        
-        // Try to get CardName field first
-        if (!empty($field_mapping['CardName'])) {
-            $cardname_field_id = $field_mapping['CardName'];
-            $cardname_value = rgar($entry, $cardname_field_id);
-            
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('DEBUG: CardName field ID: ' . $cardname_field_id . ', Value: ' . $cardname_value);
-            }
-            
-            if (!empty($cardname_value)) {
-                return esc_html($cardname_value);
-            }
-        }
-        
-        // Method 1: Look for name fields and combine them
-        $first_name = '';
-        $last_name = '';
-        
-        foreach ($form['fields'] as $field) {
-            if ($field->type === 'name') {
-                // Try different sub-field patterns
-                $field_id = $field->id;
-                
-                // Standard Gravity Forms name field sub-fields
-                $first_name = rgar($entry, $field_id . '.3') ?: rgar($entry, $field_id . '_3') ?: rgar($entry, $field_id . '3');
-                $last_name = rgar($entry, $field_id . '.6') ?: rgar($entry, $field_id . '_6') ?: rgar($entry, $field_id . '6');
-                
-                if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('DEBUG: Name field ID ' . $field_id . ' - First: "' . $first_name . '", Last: "' . $last_name . '"');
-                }
-                
-                if (!empty($first_name) || !empty($last_name)) {
-                    break;
-                }
-            }
-        }
-        
-        // Method 2: Look for separate first/last name fields
-        if (empty($first_name) && empty($last_name)) {
-            foreach ($form['fields'] as $field) {
-                $field_label_lower = strtolower($field->label);
-                $field_value = rgar($entry, $field->id);
-                
-                if (strpos($field_label_lower, 'first') !== false && strpos($field_label_lower, 'name') !== false && !empty($field_value)) {
-                    $first_name = $field_value;
-                    if (defined('WP_DEBUG') && WP_DEBUG) {
-                        error_log('DEBUG: Found first name field: ' . $field->label . ' = ' . $field_value);
-                    }
-                }
-                if (strpos($field_label_lower, 'last') !== false && strpos($field_label_lower, 'name') !== false && !empty($field_value)) {
-                    $last_name = $field_value;
-                    if (defined('WP_DEBUG') && WP_DEBUG) {
-                        error_log('DEBUG: Found last name field: ' . $field->label . ' = ' . $field_value);
-                    }
-                }
-            }
-        }
-        
-        // Method 3: Look for any field with "name" in the label
-        if (empty($first_name) && empty($last_name)) {
-            foreach ($form['fields'] as $field) {
-                $field_label_lower = strtolower($field->label);
-                $field_value = rgar($entry, $field->id);
-                
-                if (strpos($field_label_lower, 'name') !== false && !empty($field_value)) {
-                    if (defined('WP_DEBUG') && WP_DEBUG) {
-                        error_log('DEBUG: Found name field by label: ' . $field->label . ' = ' . $field_value);
-                    }
-                    return esc_html($field_value);
-                }
-            }
-        }
-        
-        // Combine first and last name
-        $full_name = trim($first_name . ' ' . $last_name);
-        
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('DEBUG: Final combined name: "' . $full_name . '"');
-        }
-        
-        return !empty($full_name) ? esc_html($full_name) : '—';
-    }
-    
-    /**
-     * Get email value
-     */
-    private function get_email_value($entry, $form) {
-        $settings = rgar($form, 'sap_integration_settings', array());
-        $field_mapping = rgar($settings, 'field_mapping', array());
-        
-        if (!empty($field_mapping['EmailAddress'])) {
-            $email_value = rgar($entry, $field_mapping['EmailAddress']);
-            return !empty($email_value) ? esc_html($email_value) : '—';
-        }
-        
-        return '—';
-    }
-    
-    /**
-     * Get company value
-     */
-    private function get_company_value($entry, $form) {
-        // Look for company field in form
-        foreach ($form['fields'] as $field) {
-            if (stripos($field->label, 'company') !== false || 
-                stripos($field->label, 'organization') !== false ||
-                stripos($field->label, 'business') !== false) {
-                $company_value = rgar($entry, $field->id);
-                return !empty($company_value) ? esc_html($company_value) : '—';
-            }
-        }
-        
-        return '—';
-    }
-    
-    /**
-     * Get country value
-     */
-    private function get_country_value($entry, $form) {
-        $settings = rgar($form, 'sap_integration_settings', array());
-        $field_mapping = rgar($settings, 'field_mapping', array());
-        
-        if (!empty($field_mapping['BPAddresses.Country'])) {
-            $country_value = rgar($entry, $field_mapping['BPAddresses.Country']);
-            return !empty($country_value) ? esc_html($country_value) : '—';
-        }
-        
-        return '—';
-    }
-    
-    /**
      * Get SAP status display
      */
     private function get_sap_status_display($entry) {
@@ -2538,14 +2443,11 @@ class Shift8_GravitySAP {
         // Increase execution time for large datasets
         set_time_limit(120); // 2 minutes
         
-        // Add debugging
-        error_log('AJAX ITEMCODE: Handler called');
         shift8_gravitysap_debug_log('AJAX ItemCode loading started');
         
         // Verify nonce
         $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? ''));
         if (!wp_verify_nonce($nonce, 'shift8_gravitysap_load_itemcodes')) {
-            error_log('AJAX ITEMCODE: Nonce verification failed');
             shift8_gravitysap_debug_log('ItemCode loading failed: Invalid nonce');
             wp_send_json_error(array('message' => 'Invalid nonce'));
             return;
@@ -2553,13 +2455,11 @@ class Shift8_GravitySAP {
         
         // Check user capabilities
         if (!current_user_can('manage_options')) {
-            error_log('AJAX ITEMCODE: Insufficient permissions');
             shift8_gravitysap_debug_log('ItemCode loading failed: Insufficient permissions');
             wp_send_json_error(array('message' => 'Insufficient permissions'));
             return;
         }
         
-        error_log('AJAX ITEMCODE: Security checks passed');
         shift8_gravitysap_debug_log('ItemCode loading: Security checks passed');
         
         try {
@@ -2589,7 +2489,6 @@ class Shift8_GravitySAP {
             $pages_fetched = !empty($stored_data['pages_fetched']) ? $stored_data['pages_fetched'] : 0;
             
             // Return success with ItemCodes and metadata
-            error_log('AJAX ITEMCODE: Returning success with ' . count($items) . ' items');
             shift8_gravitysap_debug_log('AJAX ItemCode loading completed successfully', array(
                 'total_items' => count($items),
                 'pages_fetched' => $pages_fetched
@@ -2605,7 +2504,7 @@ class Shift8_GravitySAP {
             ));
             
         } catch (Exception $e) {
-            error_log('AJAX ITEMCODE: Exception - ' . $e->getMessage());
+            shift8_gravitysap_debug_log('ItemCode loading failed with exception', array('error' => $e->getMessage()));
             wp_send_json_error(array(
                 'message' => 'Failed to load ItemCodes: ' . $e->getMessage()
             ));
@@ -2827,239 +2726,6 @@ class Shift8_GravitySAP {
         
         </script>
         <?php
-    }
-
-    /**
-     * Debug entry data to help troubleshoot name field issues
-     *
-     * @since 1.1.0
-     * @param array $form Form data
-     * @return string Debug information
-     */
-    private function debug_entry_data($form) {
-        $settings = rgar($form, 'sap_integration_settings', array());
-        $field_mapping = rgar($settings, 'field_mapping', array());
-        
-        $debug_info = "=== DEBUG ENTRY DATA ===\n\n";
-        
-        // Show field mapping
-        $debug_info .= "FIELD MAPPING:\n";
-        foreach ($field_mapping as $sap_field => $field_id) {
-            $debug_info .= "- {$sap_field} → Field ID: {$field_id}\n";
-        }
-        $debug_info .= "\n";
-        
-        // Show form fields
-        $debug_info .= "FORM FIELDS:\n";
-        foreach ($form['fields'] as $field) {
-            $debug_info .= "- ID: {$field->id}, Type: {$field->type}, Label: {$field->label}\n";
-        }
-        $debug_info .= "\n";
-        
-        // Get recent entries
-        $entries = GFAPI::get_entries($form['id'], array(), null, array('page_size' => 3));
-        
-        if (!empty($entries)) {
-            $debug_info .= "RECENT ENTRIES:\n";
-            foreach ($entries as $entry) {
-                $debug_info .= "\nEntry ID: {$entry['id']}\n";
-                $debug_info .= "Date: {$entry['date_created']}\n";
-                
-                // Show all entry data
-                foreach ($entry as $key => $value) {
-                    if (!empty($value) && !in_array($key, array('id', 'form_id', 'date_created', 'date_updated', 'is_starred', 'is_read', 'ip', 'source_url', 'user_agent', 'payment_status', 'payment_date', 'payment_amount', 'payment_method', 'transaction_id', 'is_fulfilled', 'created_by', 'transaction_type', 'status'))) {
-                        $debug_info .= "  {$key}: {$value}\n";
-                    }
-                }
-                
-                // Test name field specifically
-                $debug_info .= "\nNAME FIELD TEST:\n";
-                $name_result = $this->get_combined_name($entry, $form);
-                $debug_info .= "Result: {$name_result}\n";
-                
-                // Check CardName mapping specifically
-                if (!empty($field_mapping['CardName'])) {
-                    $cardname_field_id = $field_mapping['CardName'];
-                    $cardname_value = rgar($entry, $cardname_field_id);
-                    $debug_info .= "CardName field ID {$cardname_field_id}: '{$cardname_value}'\n";
-                }
-            }
-        } else {
-            $debug_info .= "No entries found for this form.\n";
-        }
-        
-        return $debug_info;
-    }
-
-    /**
-     * Test SAP submission with most recent entry
-     *
-     * @since 1.1.0
-     * @param array $form Form data
-     * @return array Test result
-     */
-    private function test_sap_submission($form) {
-        try {
-            $settings = rgar($form, 'sap_integration_settings', array());
-            
-            if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
-                return array(
-                    'success' => false,
-                    'message' => 'SAP Integration is not enabled for this form'
-                );
-            }
-            
-            // Get the most recent entry
-            $entries = GFAPI::get_entries($form['id'], array(), null, array('page_size' => 1));
-            
-            if (empty($entries)) {
-                return array(
-                    'success' => false,
-                    'message' => 'No entries found for this form'
-                );
-            }
-            
-            $entry = $entries[0];
-            
-            // Test the submission process
-            $this->process_form_submission($entry, $form);
-            
-            // Get updated entry to check status
-            $updated_entry = GFAPI::get_entry($entry['id']);
-            $sap_status = rgar($updated_entry, 'sap_b1_status', '');
-            $sap_cardcode = rgar($updated_entry, 'sap_b1_cardcode', '');
-            $sap_error = rgar($updated_entry, 'sap_b1_error', '');
-            
-            if (!empty($sap_cardcode)) {
-                return array(
-                    'success' => true,
-                    'message' => 'Business Partner created successfully with CardCode: ' . $sap_cardcode
-                );
-            } elseif (!empty($sap_error)) {
-                return array(
-                    'success' => false,
-                    'message' => 'Submission failed: ' . $sap_error
-                );
-            } else {
-                return array(
-                    'success' => false,
-                    'message' => 'Submission status unknown - check debug logs'
-                );
-            }
-            
-        } catch (Exception $e) {
-            return array(
-                'success' => false,
-                'message' => 'Test failed: ' . $e->getMessage()
-            );
-        }
-    }
-
-    /**
-     * Test field mapping configuration
-     *
-     * @since 1.1.0
-     * @param array $form Form data
-     * @return array Test result
-     */
-    private function test_field_mapping($form) {
-        try {
-            $settings = rgar($form, 'sap_integration_settings', array());
-            
-            if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
-                return array(
-                    'success' => false,
-                    'message' => 'SAP Integration is not enabled for this form'
-                );
-            }
-            
-            // Get the most recent real entry instead of using sample data
-            $entries = GFAPI::get_entries($form['id'], array(), null, array('page_size' => 1));
-            
-            if (empty($entries)) {
-                return array(
-                    'success' => false,
-                    'message' => 'No entries found for this form. Please submit a test form first.'
-                );
-            }
-            
-            $real_entry = $entries[0];
-            
-            // Test field mapping validation with real entry data
-            $mapping_validation = $this->validate_field_mapping($settings, $real_entry, $form);
-            
-            $message = sprintf(
-                'Mapped: %d fields, Unmapped: %d fields, Empty: %d fields',
-                $mapping_validation['total_mapped'],
-                $mapping_validation['total_unmapped'],
-                $mapping_validation['total_empty']
-            );
-            
-            // Add detailed field mapping information
-            $message .= "\n\nFIELD MAPPING DETAILS:\n";
-            $field_mapping = rgar($settings, 'field_mapping', array());
-            foreach ($field_mapping as $sap_field => $field_id) {
-                $field_value = rgar($real_entry, $field_id);
-                $field_label = $this->get_field_label($form, $field_id);
-                $message .= "- {$sap_field} → Field ID {$field_id} ({$field_label}): '{$field_value}'\n";
-            }
-            
-            // Show all entry data to help debug field IDs
-            $message .= "\n\nALL ENTRY DATA (non-empty fields):\n";
-            foreach ($real_entry as $key => $value) {
-                if (!empty($value) && !in_array($key, array('id', 'form_id', 'date_created', 'date_updated', 'is_starred', 'is_read', 'ip', 'source_url', 'user_agent', 'payment_status', 'payment_date', 'payment_amount', 'payment_method', 'transaction_id', 'is_fulfilled', 'created_by', 'transaction_type', 'status'))) {
-                    $message .= "- Field ID {$key}: '{$value}'\n";
-                }
-            }
-            
-            // Add detailed information
-            if (!empty($mapping_validation['mapped_fields'])) {
-                $message .= "\n\nMapped Fields:\n";
-                foreach ($mapping_validation['mapped_fields'] as $field) {
-                    $message .= sprintf("- %s (%s) → %s: %s\n", 
-                        $field['sap_label'], 
-                        $field['sap_field'], 
-                        $field['gf_field_label'], 
-                        $field['value']
-                    );
-                }
-            }
-            
-            if (!empty($mapping_validation['unmapped_fields'])) {
-                $message .= "\nUnmapped Fields:\n";
-                foreach ($mapping_validation['unmapped_fields'] as $field) {
-                    $message .= sprintf("- %s (%s): %s\n", 
-                        $field['sap_label'], 
-                        $field['sap_field'], 
-                        $field['reason']
-                    );
-                }
-            }
-            
-            if (!empty($mapping_validation['empty_fields'])) {
-                $message .= "\nEmpty Fields:\n";
-                foreach ($mapping_validation['empty_fields'] as $field) {
-                    $message .= sprintf("- %s (%s) → %s: %s\n", 
-                        $field['sap_label'], 
-                        $field['sap_field'], 
-                        $field['gf_field_label'], 
-                        $field['reason']
-                    );
-                }
-            }
-            
-            return array(
-                'success' => true,
-                'message' => $message,
-                'validation' => $mapping_validation
-            );
-            
-        } catch (Exception $e) {
-            return array(
-                'success' => false,
-                'message' => 'Field mapping test failed: ' . esc_html($e->getMessage())
-            );
-        }
     }
 
     /**

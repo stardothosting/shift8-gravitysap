@@ -4,7 +4,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 **📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -107,6 +107,38 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 - ContactEmployees data appears in the **Contact Persons tab** of the Business Partner in SAP B1
 - You can map address data to either BPAddresses, ContactEmployees, or both depending on your needs
 
+### Sales Quotation Line Items (Checkbox Field Mapping)
+
+When creating Sales Quotations, you can map checkbox fields to line items. Each checkbox option becomes a separate mappable field:
+
+**Example: Checkbox Field "Select Products"**
+- Option 1: "Product A" → Field ID: `15.1`
+- Option 2: "Product B" → Field ID: `15.2`
+- Option 3: "Product C" → Field ID: `15.3`
+
+**Configuration Steps:**
+1. Enable "Automatically create a sales quotation in SAP B1" in form settings
+2. Click "Load ItemCodes from SAP B1" to populate available products
+3. Map each quotation line slot to a checkbox option:
+   - **DocumentLines.1.ItemCode**
+     - Form Field: "Select Products → Product A" (15.1)
+     - SAP ItemCode: CS-Designer-001
+   - **DocumentLines.2.ItemCode**
+     - Form Field: "Select Products → Product B" (15.2)
+     - SAP ItemCode: CS-Designer-002
+
+**How It Works:**
+- ✅ **Checked boxes** create line items in the Sales Quotation
+- ❌ **Unchecked boxes** are skipped (no line item created)
+- The quotation is automatically linked to the newly created Business Partner
+- You can mix checkbox fields with text fields for dynamic product selection
+
+**Perfect For:**
+- Product sample request forms
+- Multi-product order forms
+- Service selection forms
+- Configurable quotation requests
+
 ## WP-CLI Testing (Developers)
 
 Test the complete form submission workflow with real SAP B1 integration:
@@ -181,6 +213,23 @@ wp shift8-gravitysap test_submission --form_id=<id>
 Tests real SAP B1 integration with data verification.
 
 ## Changelog
+
+### 1.3.1
+* **FIX**: Removed temporary debug logging statements
+* **CLEANUP**: Removed scenario-specific business logic functions
+* **STABILITY**: Code cleanup and optimization for production deployment
+
+### 1.3.0
+* **NEW FEATURE**: Sales Quotation creation with checkbox field mapping support
+* **ENHANCEMENT**: Dynamic line item mapping for Sales Quotations
+* **ENHANCEMENT**: Improved SAP B1 API integration and data handling
+* **ENHANCEMENT**: Enhanced user interface and progress indicators
+* **FIX**: Fixed checkbox sub-field value detection for Sales Quotations
+* **FIX**: Fixed field mapping persistence for sub-field IDs (e.g., 15.1, 15.2)
+* **FIX**: Various bug fixes and performance improvements
+* **TESTING**: Added 6 new tests for checkbox field mapping functionality
+* **TESTING**: Expanded test coverage with additional unit tests
+* **STABILITY**: Code optimization and cleanup for production deployment
 
 ### 1.2.2
 * **MAJOR FEATURE**: Added Sales Quotation creation functionality
