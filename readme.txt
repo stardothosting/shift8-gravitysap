@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.3.1
+* Stable tag: 1.3.2
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -103,6 +103,11 @@ This is ideal for sample request forms, multi-product orders, and service select
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.3.2 =
+* **FIX**: Fixed critical error when viewing Gravity Forms entries list (undefined method)
+* **FIX**: Updated display_sap_status_column to only handle SAP-specific columns
+* **STABILITY**: All 99 tests passing with 231 assertions
 
 = 1.3.1 =
 * **FIX**: Removed temporary debug logging statements
