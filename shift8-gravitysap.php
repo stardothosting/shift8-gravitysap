@@ -2311,24 +2311,10 @@ class Shift8_GravitySAP {
             return $value;
         }
         
+        // Only handle SAP-specific columns
         switch ($field_id) {
-            case 'name':
-                return $this->get_combined_name($entry, $form);
-                
-            case 'email':
-                return $this->get_email_value($entry, $form);
-                
-            case 'company':
-                return $this->get_company_value($entry, $form);
-                
-            case 'country':
-                return $this->get_country_value($entry, $form);
-                
             case 'sap_b1_status':
                 return $this->get_sap_status_display($entry);
-                
-            case 'date_created':
-                return $this->get_date_created($entry);
                 
             default:
                 return $value;
