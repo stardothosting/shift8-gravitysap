@@ -65,3 +65,10 @@ svn/
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .cursor/rules/snyk_rules.mdc
+
+push.sh
+wp-deploy/*
+svn/*
+push.exclude
+.vscode
+.codacy

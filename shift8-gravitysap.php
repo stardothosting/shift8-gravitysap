@@ -2311,14 +2311,139 @@ class Shift8_GravitySAP {
             return $value;
         }
         
-        // Only handle SAP-specific columns
+        $settings = $form['sap_integration_settings'];
+        $field_mapping = rgar($settings, 'field_mapping', array());
+        
+        // Use the user's field mapping to populate columns
         switch ($field_id) {
+            case 'name':
+                // First try direct CardName mapping
+                if (!empty($field_mapping['CardName'])) {
+                    $name_value = $this->get_entry_field_value($entry, $form, $field_mapping['CardName']);
+                    if (!empty($name_value)) {
+                        return esc_html($name_value);
+                    }
+                }
+                // Then try composite FirstName + LastName
+                $first_name = '';
+                $last_name = '';
+                if (!empty($field_mapping['CardName_FirstName'])) {
+                    $first_name = $this->get_entry_field_value($entry, $form, $field_mapping['CardName_FirstName']);
+                }
+                if (!empty($field_mapping['CardName_LastName'])) {
+                    $last_name = $this->get_entry_field_value($entry, $form, $field_mapping['CardName_LastName']);
+                }
+                if (!empty($first_name) || !empty($last_name)) {
+                    return esc_html(trim($first_name . ' ' . $last_name));
+                }
+                return $value;
+                
+            case 'email':
+                // Use EmailAddress from field mapping
+                if (!empty($field_mapping['EmailAddress'])) {
+                    $email_value = $this->get_entry_field_value($entry, $form, $field_mapping['EmailAddress']);
+                    return !empty($email_value) ? esc_html($email_value) : $value;
+                }
+                return $value;
+                
+            case 'company':
+                // SAP doesn't have a dedicated "Company" field, but CardName is often the company name
+                // Use CardName as fallback for company display in entries list
+                if (!empty($field_mapping['CardName'])) {
+                    $company_value = $this->get_entry_field_value($entry, $form, $field_mapping['CardName']);
+                    if (!empty($company_value)) {
+                        return esc_html($company_value);
+                    }
+                }
+                return $value;
+                
+            case 'country':
+                // Use Country from field mapping
+                if (!empty($field_mapping['BPAddresses.Country'])) {
+                    $country_value = $this->get_entry_field_value($entry, $form, $field_mapping['BPAddresses.Country']);
+                    return !empty($country_value) ? esc_html($country_value) : $value;
+                }
+                return $value;
+                
             case 'sap_b1_status':
                 return $this->get_sap_status_display($entry);
                 
             default:
                 return $value;
         }
+    }
+    
+    /**
+     * Get entry field value with proper handling for complex field types
+     *
+     * Handles Gravity Forms Name, Address, and other complex field types that
+     * store values in sub-fields (e.g., Name field stores first name in 1.3, last in 1.6)
+     *
+     * @since 1.3.2
+     * @param array $entry   Entry data
+     * @param array $form    Form data
+     * @param string $field_id Field ID (can be "1" or "1.3" for sub-fields)
+     * @return string Field value
+     */
+    private function get_entry_field_value($entry, $form, $field_id) {
+        // Try direct field access first
+        $value = rgar($entry, $field_id);
+        if (!empty($value)) {
+            return $value;
+        }
+        
+        // For complex fields (Name, Address), GF might store full value in parent field ID
+        // or in sub-fields. Try to get the field object to understand the type.
+        $base_field_id = intval($field_id);
+        $field = GFAPI::get_field($form, $base_field_id);
+        
+        if (!$field) {
+            return '';
+        }
+        
+        // Handle Name fields - combine first and last name if direct access failed
+        if ($field->type === 'name') {
+            $first_name = rgar($entry, $field_id . '.3'); // First name is typically .3
+            $last_name = rgar($entry, $field_id . '.6');  // Last name is typically .6
+            $combined = trim($first_name . ' ' . $last_name);
+            if (!empty($combined)) {
+                return $combined;
+            }
+        }
+        
+        // Handle Address fields - return full address if direct access failed
+        if ($field->type === 'address') {
+            $parts = array();
+            $street = rgar($entry, $field_id . '.1');
+            $street2 = rgar($entry, $field_id . '.2');
+            $city = rgar($entry, $field_id . '.3');
+            $state = rgar($entry, $field_id . '.4');
+            $zip = rgar($entry, $field_id . '.5');
+            $country = rgar($entry, $field_id . '.6');
+            
+            if (!empty($street)) {
+                $parts[] = $street;
+            }
+            if (!empty($street2)) {
+                $parts[] = $street2;
+            }
+            if (!empty($city)) {
+                $parts[] = $city;
+            }
+            if (!empty($state)) {
+                $parts[] = $state;
+            }
+            if (!empty($zip)) {
+                $parts[] = $zip;
+            }
+            if (!empty($country)) {
+                $parts[] = $country;
+            }
+            
+            return implode(', ', $parts);
+        }
+        
+        return '';
     }
     
     /**

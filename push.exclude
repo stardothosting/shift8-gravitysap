@@ -1,10 +1,14 @@
 .DS_Store
 .git
 .gitignore
+.github
 .cursorrules
 .cursorignore
 .cursor/
 .codacy
+.cursor/
+.vscode
+.snyk
 # assets (moved to ../wordpress-org-assets/)
 LICENSE
 README.md
