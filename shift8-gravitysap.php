@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.3.3
+ * Version: 1.3.4
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.3.3');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.3.4');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -576,6 +576,9 @@ class Shift8_GravitySAP {
             'Cellular' => esc_html__('Mobile Phone', 'shift8-gravity-forms-sap-b1-integration'),
             'Fax' => esc_html__('Fax Number', 'shift8-gravity-forms-sap-b1-integration'),
             'Website' => esc_html__('Website', 'shift8-gravity-forms-sap-b1-integration'),
+            'GroupCode' => esc_html__('Business Partner Group', 'shift8-gravity-forms-sap-b1-integration'),
+            'Currency' => esc_html__('Currency', 'shift8-gravity-forms-sap-b1-integration'),
+            'PriceListNum' => esc_html__('Price List (Payment Terms)', 'shift8-gravity-forms-sap-b1-integration'),
             'BPAddresses.Street' => esc_html__('Address: Street (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
             'BPAddresses.City' => esc_html__('Address: City (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
             'BPAddresses.State' => esc_html__('Address: State/Province (BPAddresses)', 'shift8-gravity-forms-sap-b1-integration'),
@@ -657,6 +660,26 @@ class Shift8_GravitySAP {
                 'required' => false,
                 'format' => 'url',
                 'description' => 'Website URL'
+            ),
+            'GroupCode' => array(
+                'max_length' => 10,
+                'required' => false,
+                'format' => 'integer',
+                'description' => 'Business Partner Group Code',
+                'validation_message' => 'Enter the numeric Group Code from SAP (e.g., 100, 101)'
+            ),
+            'Currency' => array(
+                'max_length' => 3,
+                'required' => false,
+                'description' => 'Currency Code',
+                'validation_message' => 'Use 3-letter currency codes (CAD, USD, EUR)'
+            ),
+            'PriceListNum' => array(
+                'max_length' => 10,
+                'required' => false,
+                'format' => 'integer',
+                'description' => 'Price List Number',
+                'validation_message' => 'Enter the numeric Price List number from SAP'
             ),
             'BPAddresses.Street' => array(
                 'max_length' => 100,
