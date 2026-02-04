@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.3.2
+ * Version: 1.3.3
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.3.2');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.3.3');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -404,33 +404,6 @@ class Shift8_GravitySAP {
                 GFCommon::add_message(esc_html__('Test successful! Business Partner created in SAP: ', 'shift8-gravity-forms-sap-b1-integration') . $test_result['message']);
             } else {
                 GFCommon::add_error_message(esc_html__('Test failed: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
-            }
-        }
-        
-        // Handle field mapping test
-        if (rgpost('test-field-mapping') && wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
-            $test_result = $this->test_field_mapping($form);
-            
-            if ($test_result['success']) {
-                GFCommon::add_message(esc_html__('Field mapping test completed: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
-            } else {
-                GFCommon::add_error_message(esc_html__('Field mapping test failed: ', 'shift8-gravity-forms-sap-b1-integration') . esc_html($test_result['message']));
-            }
-        }
-        
-        // Handle debug entry data
-        if (rgpost('debug-entry-data') && wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
-            $debug_result = $this->debug_entry_data($form);
-            GFCommon::add_message('<pre>' . esc_html($debug_result) . '</pre>');
-        }
-        
-        // Handle test SAP submission
-        if (rgpost('test-sap-submission') && wp_verify_nonce(rgpost('gforms_save_form'), 'gforms_save_form')) {
-            $test_result = $this->test_sap_submission($form);
-            if ($test_result['success']) {
-                GFCommon::add_message('✅ SAP submission test successful: ' . esc_html($test_result['message']));
-            } else {
-                GFCommon::add_error_message('❌ SAP submission test failed: ' . esc_html($test_result['message']));
             }
         }
         
@@ -1330,48 +1303,6 @@ class Shift8_GravitySAP {
     private function render_test_sections($form_id, $settings) {
         ?>
         <hr style="margin: 30px 0;" />
-        
-        <!-- Field Mapping Test -->
-        <form method="post" id="test-field-mapping-form" style="margin-bottom: 20px;">
-            <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
-            <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
-            <input type="hidden" name="subview" value="sap_integration" />
-            
-            <h3><?php esc_html_e('Test Field Mapping', 'shift8-gravity-forms-sap-b1-integration'); ?></h3>
-            <p><?php esc_html_e('Test the field mapping configuration with sample data to see which fields are mapped and which are missing.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
-            
-            <p class="submit">
-                <input type="submit" name="test-field-mapping" value="<?php esc_attr_e('Test Field Mapping', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-secondary" />
-            </p>
-        </form>
-        
-        <!-- Debug Entry Data -->
-        <form method="post" id="debug-entry-data-form" style="margin-bottom: 20px;">
-            <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
-            <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
-            <input type="hidden" name="subview" value="sap_integration" />
-            
-            <h3><?php esc_html_e('Debug Entry Data', 'shift8-gravity-forms-sap-b1-integration'); ?></h3>
-            <p><?php esc_html_e('Show the raw entry data and field mapping to help debug why the Name field is blank.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
-            
-            <p class="submit">
-                <input type="submit" name="debug-entry-data" value="<?php esc_attr_e('Debug Entry Data', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-secondary" />
-            </p>
-        </form>
-        
-        <!-- Test SAP Submission -->
-        <form method="post" id="test-sap-submission-form" style="margin-bottom: 20px;">
-            <?php wp_nonce_field('gforms_save_form', 'gforms_save_form') ?>
-            <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
-            <input type="hidden" name="subview" value="sap_integration" />
-            
-            <h3><?php esc_html_e('Test SAP Submission', 'shift8-gravity-forms-sap-b1-integration'); ?></h3>
-            <p><?php esc_html_e('Test SAP submission with the most recent entry to see detailed error information.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
-            
-            <p class="submit">
-                <input type="submit" name="test-sap-submission" value="<?php esc_attr_e('Test SAP Submission', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-secondary" />
-            </p>
-        </form>
         
         <!-- Numbering Series Test -->
         <form method="post" id="test-numbering-series-form" style="margin-bottom: 20px;">
@@ -2946,8 +2877,14 @@ class Shift8_GravitySAP {
      */
     private function map_test_values_to_business_partner($settings, $test_values) {
         $card_type = rgar($settings, 'card_type', 'cCustomer');
+        $card_code_prefix = rgar($settings, 'card_code_prefix', '');
         
         $business_partner = array('CardType' => $card_type);
+        
+        // Add the prefix if specified (same as real form submission)
+        if (!empty($card_code_prefix)) {
+            $business_partner['CardCodePrefix'] = $card_code_prefix;
+        }
         
         foreach ($test_values as $sap_field => $test_value) {
             if (empty($test_value)) {

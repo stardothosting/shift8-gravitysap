@@ -72,3 +72,4 @@ svn/*
 push.exclude
 .vscode
 .codacy
+.snyk
