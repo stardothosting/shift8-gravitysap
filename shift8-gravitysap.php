@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.3.8
+ * Version: 1.4.4
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.3.8');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.4.4');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -229,6 +229,10 @@ class Shift8_GravitySAP {
         add_action('wp_ajax_retry_sap_submission', array($this, 'ajax_retry_sap_submission'));
         add_action('wp_ajax_load_itemcodes', array($this, 'ajax_load_itemcodes'));
         add_action('admin_footer', array($this, 'add_retry_button_script'));
+        
+        // Async SAP processing endpoint (accessible without login for loopback requests)
+        add_action('wp_ajax_shift8_gravitysap_async_process', array($this, 'ajax_async_sap_process'));
+        add_action('wp_ajax_nopriv_shift8_gravitysap_async_process', array($this, 'ajax_async_sap_process'));
         
         
         // Form validation hook for SAP field limits
@@ -524,6 +528,27 @@ class Shift8_GravitySAP {
                         <label for="sap_create_quotation"><?php esc_html_e('Automatically create a Sales Quotation in SAP B1 after creating the Business Partner', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
                         <p class="description">
                             <?php esc_html_e('When enabled, a Sales Quotation will be created and linked to the newly created Business Partner. Configure quotation field mapping below.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                        </p>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th scope="row">
+                        <label for="sap_check_existing_bp"><?php esc_html_e('Check for Existing Business Partner', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
+                    </th>
+                    <td>
+                        <input type="checkbox" id="sap_check_existing_bp" name="sap_check_existing_bp" value="1" <?php checked(rgar($settings, 'check_existing_bp'), '1'); ?> />
+                        <label for="sap_check_existing_bp"><?php esc_html_e('Check if a Business Partner already exists before creating a new one', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
+                        <p class="description">
+                            <?php esc_html_e('When enabled, the system will search SAP for an existing Business Partner matching:', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                            <br>
+                            <strong>&bull;</strong> <?php esc_html_e('Business Partner Name (case-insensitive)', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                            <br>
+                            <strong>&bull;</strong> <?php esc_html_e('Country', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                            <br>
+                            <strong>&bull;</strong> <?php esc_html_e('Postal/ZIP Code', 'shift8-gravity-forms-sap-b1-integration'); ?>
+                            <br><br>
+                            <?php esc_html_e('If a match is found, a Sales Quotation will be added to the existing Business Partner instead of creating a new one.', 'shift8-gravity-forms-sap-b1-integration'); ?>
                         </p>
                     </td>
                 </tr>
@@ -1495,6 +1520,7 @@ class Shift8_GravitySAP {
             'card_type' => in_array(rgpost('sap_card_type'), array('cCustomer', 'cSupplier', 'cLid'), true) ? rgpost('sap_card_type') : 'cCustomer',
             'card_code_prefix' => sanitize_text_field(rgpost('sap_card_code_prefix')),
             'create_quotation' => rgpost('sap_create_quotation') === '1' ? '1' : '0',
+            'check_existing_bp' => rgpost('sap_check_existing_bp') === '1' ? '1' : '0',
             'field_mapping' => array(),
             'quotation_field_mapping' => array(),
             'test_values' => array()
@@ -1599,11 +1625,6 @@ class Shift8_GravitySAP {
     public function process_form_submission($entry, $form) {
         $settings = rgar($form, 'sap_integration_settings');
         
-        // Initialize status tracking
-        if (!empty($entry['id'])) {
-            $this->update_entry_sap_status($entry['id'], 'processing', '', '');
-        }
-        
         if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
             if (!empty($entry['id'])) {
                 $this->update_entry_sap_status($entry['id'], 'skipped', '', 'SAP Integration not enabled for this form');
@@ -1611,12 +1632,134 @@ class Shift8_GravitySAP {
             return;
         }
         
+        // Get plugin settings (SAP connection details)
+        $plugin_settings = get_option('shift8_gravitysap_settings', array());
+        
+        // Check if connection settings are configured
+        if (empty($plugin_settings['sap_endpoint']) || empty($plugin_settings['sap_username']) || empty($plugin_settings['sap_password'])) {
+            $this->update_entry_sap_status($entry['id'], 'failed', '', 'SAP connection settings incomplete');
+            shift8_gravitysap_debug_log('SAP connection settings INCOMPLETE');
+            return;
+        }
+        
+        // Set initial status to pending (will be processed async)
+        $this->update_entry_sap_status($entry['id'], 'pending', '', '');
+        
+        // Generate a secure token for async processing
+        $async_token = wp_generate_password(32, false);
+        gform_update_meta($entry['id'], 'sap_async_token', wp_hash($async_token));
+        
+        // Fire non-blocking loopback request to process SAP integration asynchronously
+        $this->fire_async_sap_process($entry['id'], $form['id'], $async_token);
+        
+        shift8_gravitysap_debug_log('🚀 SAP async processing initiated', array(
+            'entry_id' => $entry['id'],
+            'form_id' => $form['id']
+        ));
+    }
+    
+    /**
+     * Fire non-blocking loopback request for async SAP processing
+     *
+     * @since 1.4.0
+     * @param int    $entry_id    Entry ID
+     * @param int    $form_id     Form ID
+     * @param string $async_token Security token for verification
+     */
+    private function fire_async_sap_process($entry_id, $form_id, $async_token) {
+        $ajax_url = admin_url('admin-ajax.php');
+        
+        $args = array(
+            'timeout'   => 0.01, // Essentially non-blocking
+            'blocking'  => false, // Don't wait for response
+            'sslverify' => apply_filters('https_local_ssl_verify', false),
+            'body'      => array(
+                'action'      => 'shift8_gravitysap_async_process',
+                'entry_id'    => $entry_id,
+                'form_id'     => $form_id,
+                'async_token' => $async_token,
+            ),
+        );
+        
+        wp_remote_post($ajax_url, $args);
+    }
+    
+    /**
+     * AJAX handler for async SAP processing
+     *
+     * Processes the SAP integration asynchronously via loopback request.
+     * This is called by fire_async_sap_process() and runs in a separate PHP process.
+     *
+     * @since 1.4.0
+     */
+    public function ajax_async_sap_process() {
+        // Verify request parameters
+        $entry_id = isset($_POST['entry_id']) ? absint(wp_unslash($_POST['entry_id'])) : 0;
+        $form_id = isset($_POST['form_id']) ? absint(wp_unslash($_POST['form_id'])) : 0;
+        $async_token = isset($_POST['async_token']) ? sanitize_text_field(wp_unslash($_POST['async_token'])) : '';
+        
+        if (empty($entry_id) || empty($form_id) || empty($async_token)) {
+            shift8_gravitysap_debug_log('❌ Async SAP process: Missing required parameters');
+            wp_die();
+        }
+        
+        // Verify the async token
+        $stored_token_hash = gform_get_meta($entry_id, 'sap_async_token');
+        if (empty($stored_token_hash) || !hash_equals($stored_token_hash, wp_hash($async_token))) {
+            shift8_gravitysap_debug_log('❌ Async SAP process: Invalid token', array(
+                'entry_id' => $entry_id
+            ));
+            wp_die();
+        }
+        
+        // Clear the token (single use)
+        gform_delete_meta($entry_id, 'sap_async_token');
+        
+        shift8_gravitysap_debug_log('=== ASYNC SAP PROCESSING STARTED ===', array(
+            'entry_id' => $entry_id,
+            'form_id' => $form_id
+        ));
+        
+        // Get entry and form data
+        $entry = GFAPI::get_entry($entry_id);
+        $form = GFAPI::get_form($form_id);
+        
+        if (is_wp_error($entry) || !$form) {
+            shift8_gravitysap_debug_log('❌ Async SAP process: Failed to load entry or form', array(
+                'entry_id' => $entry_id,
+                'form_id' => $form_id
+            ));
+            wp_die();
+        }
+        
+        // Process the SAP integration synchronously (we're now in async context)
+        $this->process_sap_integration_sync($entry, $form);
+        
+        wp_die();
+    }
+    
+    /**
+     * Synchronous SAP integration processing
+     *
+     * This is the actual SAP processing logic, called either by async handler
+     * or directly for retry/testing purposes.
+     *
+     * @since 1.4.0
+     * @param array $entry Entry data
+     * @param array $form  Form data
+     */
+    public function process_sap_integration_sync($entry, $form) {
+        $settings = rgar($form, 'sap_integration_settings');
+        
         try {
             // STEP 1: Validate SAP connection settings
             $plugin_settings = get_option('shift8_gravitysap_settings', array());
             if (empty($plugin_settings['sap_endpoint']) || empty($plugin_settings['sap_username']) || empty($plugin_settings['sap_password'])) {
                 throw new Exception('SAP connection settings are incomplete - check plugin settings');
             }
+            
+            // Set status to processing
+            $this->update_entry_sap_status($entry['id'], 'processing', '', '');
             
             // STEP 2: Validate required fields BEFORE attempting SAP connection
             $validation_result = $this->validate_required_fields($settings, $entry, $form);
@@ -1652,14 +1795,175 @@ class Shift8_GravitySAP {
             require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
             $sap_service = new Shift8_GravitySAP_SAP_Service($plugin_settings);
             
-            // STEP 6: Create Business Partner in SAP
-            $result = $sap_service->create_business_partner($business_partner_data);
+            // STEP 6: Check for existing Business Partner if enabled
+            $existing_card_code = null;
+            if (rgar($settings, 'check_existing_bp') === '1') {
+                $existing_card_code = $this->check_for_existing_business_partner($sap_service, $business_partner_data);
+            }
             
-            // STEP 7: Handle success
-            if ($result && isset($result['CardCode'])) {
-                $this->update_entry_sap_status($entry['id'], 'success', $result['CardCode'], '');
+            // STEP 7: Use existing CardCode or create new Business Partner
+            // Initialize contact person info for use in Sales Quotation
+            // SAP B1 uses InternalCode (numeric) for ContactPersonCode on documents
+            $contact_person_code = null;
+            $contact_person_name = null;
+            
+            if ($existing_card_code) {
+                // Use existing Business Partner
+                $card_code = $existing_card_code;
                 
-                // Add success note to entry
+                // Handle Contact Person for existing Business Partner
+                if (!empty($business_partner_data['ContactEmployees']) && is_array($business_partner_data['ContactEmployees'])) {
+                    $contact_data = $business_partner_data['ContactEmployees'][0];
+                    
+                    // Build contact name for matching
+                    $search_name = '';
+                    if (!empty($contact_data['Name'])) {
+                        $search_name = $contact_data['Name'];
+                    } elseif (!empty($contact_data['FirstName']) || !empty($contact_data['LastName'])) {
+                        $search_name = trim(($contact_data['FirstName'] ?? '') . ' ' . ($contact_data['LastName'] ?? ''));
+                    }
+                    $search_email = $contact_data['E_Mail'] ?? '';
+                    
+                    shift8_gravitysap_debug_log('Checking for existing Contact Person', array(
+                        'CardCode' => $card_code,
+                        'SearchName' => $search_name,
+                        'SearchEmail' => $search_email
+                    ));
+                    
+                    // First, check if contact already exists (case-insensitive name + email match)
+                    $existing_contact = null;
+                    if (!empty($search_name)) {
+                        $existing_contact = $sap_service->find_existing_contact($card_code, $search_name, $search_email);
+                    }
+                    
+                    if ($existing_contact) {
+                        // Use existing contact
+                        $contact_person_name = $existing_contact['Name'] ?? null;
+                        $contact_person_code = $existing_contact['InternalCode'] ?? null;
+                        
+                        GFFormsModel::add_note(
+                            $entry['id'], 
+                            0, 
+                            'Shift8 SAP Integration', 
+                            sprintf(
+                                /* translators: 1: Contact name, 2: CardCode, 3: InternalCode */
+                                esc_html__('👤 Found existing Contact Person "%1$s" (Code: %3$s) on Business Partner %2$s', 'shift8-gravity-forms-sap-b1-integration'), 
+                                esc_html($contact_person_name ?? 'Unknown'),
+                                esc_html($card_code),
+                                esc_html($contact_person_code ?? 'N/A')
+                            )
+                        );
+                        
+                        shift8_gravitysap_debug_log('✅ Using existing Contact Person', array(
+                            'ContactName' => $contact_person_name,
+                            'ContactPersonCode' => $contact_person_code,
+                            'CardCode' => $card_code
+                        ));
+                    } else {
+                        // No existing contact found - add new one
+                        shift8_gravitysap_debug_log('No existing contact found, adding new Contact Person', array(
+                            'CardCode' => $card_code,
+                            'ContactData' => $contact_data
+                        ));
+                        
+                        $contact_result = $sap_service->add_contact_to_business_partner($card_code, $contact_data);
+                        
+                        if ($contact_result) {
+                            $contact_person_name = $contact_result['Name'] ?? null;
+                            // SAP B1 uses InternalCode (numeric) for ContactPersonCode on documents
+                            $contact_person_code = $contact_result['InternalCode'] ?? null;
+                            
+                            GFFormsModel::add_note(
+                                $entry['id'], 
+                                0, 
+                                'Shift8 SAP Integration', 
+                                sprintf(
+                                    /* translators: 1: Contact name, 2: CardCode, 3: InternalCode */
+                                    esc_html__('👤 Contact Person "%1$s" (Code: %3$s) added to existing Business Partner %2$s', 'shift8-gravity-forms-sap-b1-integration'), 
+                                    esc_html($contact_person_name ?? 'Unknown'),
+                                    esc_html($card_code),
+                                    esc_html($contact_person_code ?? 'N/A')
+                                )
+                            );
+                            
+                            shift8_gravitysap_debug_log('✅ Contact Person added successfully', array(
+                                'ContactName' => $contact_person_name,
+                                'ContactPersonCode' => $contact_person_code,
+                                'CardCode' => $card_code,
+                                'InternalCode' => $contact_result['InternalCode'] ?? 'N/A'
+                            ));
+                        } else {
+                            // Log warning but don't fail - contact is optional
+                            shift8_gravitysap_debug_log('⚠️ Could not add Contact Person to existing BP (non-fatal)', array(
+                                'CardCode' => $card_code,
+                                'ContactData' => $contact_data
+                            ));
+                            
+                            GFFormsModel::add_note(
+                                $entry['id'], 
+                                0, 
+                                'Shift8 SAP Integration', 
+                                sprintf(
+                                    /* translators: %s: CardCode */
+                                    esc_html__('⚠️ Could not add Contact Person to existing Business Partner %s (Sales Quotation will proceed without contact)', 'shift8-gravity-forms-sap-b1-integration'), 
+                                    esc_html($card_code)
+                                )
+                            );
+                        }
+                    }
+                }
+                
+                $this->update_entry_sap_status($entry['id'], 'success', $card_code, '');
+                
+                GFFormsModel::add_note(
+                    $entry['id'], 
+                    0, 
+                    'Shift8 SAP Integration', 
+                    sprintf(
+                        /* translators: %s: SAP CardCode */
+                        esc_html__('🔗 MATCHED: Found existing Business Partner in SAP with CardCode: %s', 'shift8-gravity-forms-sap-b1-integration'), 
+                        esc_html($card_code)
+                    )
+                );
+                
+                shift8_gravitysap_debug_log('🔗 MATCHED EXISTING BUSINESS PARTNER', array(
+                    'entry_id' => $entry['id'],
+                    'CardCode' => $card_code
+                ));
+            } else {
+                // Create new Business Partner in SAP
+                $result = $sap_service->create_business_partner($business_partner_data);
+                
+                if (!$result || !isset($result['CardCode'])) {
+                    throw new Exception('SAP returned success but no CardCode - check SAP logs');
+                }
+                
+                $card_code = $result['CardCode'];
+                
+                // Extract contact person info from the created BP
+                // The contact person is included in the BP creation - check if SAP returned the InternalCode
+                if (!empty($result['ContactEmployees']) && is_array($result['ContactEmployees'])) {
+                    // SAP returned the ContactEmployees with InternalCodes
+                    $contact_person_name = $result['ContactEmployees'][0]['Name'] ?? null;
+                    $contact_person_code = $result['ContactEmployees'][0]['InternalCode'] ?? null;
+                } elseif (!empty($business_partner_data['ContactEmployees']) && is_array($business_partner_data['ContactEmployees'])) {
+                    // Fallback: get name from input data, but we need to fetch BP to get InternalCode
+                    $contact_person_name = $business_partner_data['ContactEmployees'][0]['Name'] ?? null;
+                    
+                    // Fetch the created BP to get the contact's InternalCode
+                    $created_bp = $sap_service->get_business_partner($card_code);
+                    if ($created_bp && !empty($created_bp['ContactEmployees'])) {
+                        foreach ($created_bp['ContactEmployees'] as $contact) {
+                            if (isset($contact['Name']) && $contact['Name'] === $contact_person_name) {
+                                $contact_person_code = $contact['InternalCode'] ?? null;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                $this->update_entry_sap_status($entry['id'], 'success', $card_code, '');
+                
                 GFFormsModel::add_note(
                     $entry['id'], 
                     0, 
@@ -1667,71 +1971,72 @@ class Shift8_GravitySAP {
                     sprintf(
                         /* translators: %s: SAP Business Partner Card Code */
                         esc_html__('✅ SUCCESS: Business Partner created in SAP B1. Card Code: %s', 'shift8-gravity-forms-sap-b1-integration'), 
-                        esc_html($result['CardCode'])
+                        esc_html($card_code)
                     )
                 );
                 
                 shift8_gravitysap_debug_log('✅ SAP CONFIRMATION: Business Partner created successfully', array(
-                    'CardCode' => $result['CardCode'],
+                    'CardCode' => $card_code,
                     'CardName' => $result['CardName'] ?? 'N/A',
                     'CardType' => $result['CardType'] ?? 'N/A',
                     'Series' => $result['Series'] ?? 'N/A',
                     'EntryID' => $entry['id'],
-                    'FormID' => $form['id']
+                    'FormID' => $form['id'],
+                    'ContactPersonName' => $contact_person_name ?? 'N/A',
+                    'ContactPersonCode' => $contact_person_code ?? 'N/A'
                 ));
-                
-                // STEP 8: Create Sales Quotation if enabled
-                if (!empty($settings['create_quotation']) && $settings['create_quotation'] === '1') {
-                    try {
-                        $quotation_result = $this->create_sales_quotation_from_entry($entry, $form, $settings, $result['CardCode'], $sap_service);
+            }
+            
+            // STEP 8: Create Sales Quotation if enabled
+            if (!empty($settings['create_quotation']) && $settings['create_quotation'] === '1') {
+                try {
+                    // Pass the InternalCode for ContactPersonCode (SAP expects numeric code, not name)
+                    $quotation_result = $this->create_sales_quotation_from_entry($entry, $form, $settings, $card_code, $sap_service, $contact_person_code);
+                    
+                    if ($quotation_result && isset($quotation_result['DocEntry'])) {
+                        // Update entry with quotation info
+                        gform_update_meta($entry['id'], 'sap_b1_quotation_docentry', $quotation_result['DocEntry']);
+                        gform_update_meta($entry['id'], 'sap_b1_quotation_docnum', $quotation_result['DocNum'] ?? '');
                         
-                        if ($quotation_result && isset($quotation_result['DocEntry'])) {
-                            // Update entry with quotation info
-                            gform_update_meta($entry['id'], 'sap_b1_quotation_docentry', $quotation_result['DocEntry']);
-                            gform_update_meta($entry['id'], 'sap_b1_quotation_docnum', $quotation_result['DocNum'] ?? '');
-                            
-                            // Add quotation note
-                            GFFormsModel::add_note(
-                                $entry['id'], 
-                                0, 
-                                'Shift8 SAP Integration', 
-                                sprintf(
-                                    /* translators: 1: DocNum, 2: DocEntry */
-                                    esc_html__('✅ SUCCESS: Sales Quotation created in SAP B1. Doc #%1$s (Entry: %2$s)', 'shift8-gravity-forms-sap-b1-integration'), 
-                                    esc_html($quotation_result['DocNum'] ?? 'N/A'),
-                                    esc_html($quotation_result['DocEntry'])
-                                )
-                            );
-                            
-                            shift8_gravitysap_debug_log('✅ SAP QUOTATION: Sales Quotation created successfully', array(
-                                'DocEntry' => $quotation_result['DocEntry'],
-                                'DocNum' => $quotation_result['DocNum'] ?? 'N/A',
-                                'CardCode' => $result['CardCode'],
-                                'EntryID' => $entry['id']
-                            ));
-                        }
-                    } catch (Exception $quotation_error) {
-                        // Log quotation error but don't fail the whole submission
-                        shift8_gravitysap_debug_log('⚠️ SAP QUOTATION FAILED (BP was created successfully)', array(
-                            'error' => $quotation_error->getMessage(),
-                            'CardCode' => $result['CardCode'],
-                            'EntryID' => $entry['id']
-                        ));
-                        
+                        // Add quotation note
                         GFFormsModel::add_note(
                             $entry['id'], 
                             0, 
                             'Shift8 SAP Integration', 
                             sprintf(
-                                /* translators: %s: Error message */
-                                esc_html__('⚠️ WARNING: Sales Quotation creation failed: %s (Business Partner was created successfully)', 'shift8-gravity-forms-sap-b1-integration'), 
-                                esc_html($quotation_error->getMessage())
+                                /* translators: 1: DocNum, 2: DocEntry */
+                                esc_html__('✅ SUCCESS: Sales Quotation created in SAP B1. Doc #%1$s (Entry: %2$s)', 'shift8-gravity-forms-sap-b1-integration'), 
+                                esc_html($quotation_result['DocNum'] ?? 'N/A'),
+                                esc_html($quotation_result['DocEntry'])
                             )
                         );
+                        
+                        shift8_gravitysap_debug_log('✅ SAP QUOTATION: Sales Quotation created successfully', array(
+                            'DocEntry' => $quotation_result['DocEntry'],
+                            'DocNum' => $quotation_result['DocNum'] ?? 'N/A',
+                            'CardCode' => $card_code,
+                            'EntryID' => $entry['id']
+                        ));
                     }
+                } catch (Exception $quotation_error) {
+                    // Log quotation error but don't fail the whole submission
+                    shift8_gravitysap_debug_log('⚠️ SAP QUOTATION FAILED (BP was created/matched successfully)', array(
+                        'error' => $quotation_error->getMessage(),
+                        'CardCode' => $card_code,
+                        'EntryID' => $entry['id']
+                    ));
+                    
+                    GFFormsModel::add_note(
+                        $entry['id'], 
+                        0, 
+                        'Shift8 SAP Integration', 
+                        sprintf(
+                            /* translators: %s: Error message */
+                            esc_html__('⚠️ WARNING: Sales Quotation creation failed: %s (Business Partner was created/matched successfully)', 'shift8-gravity-forms-sap-b1-integration'), 
+                            esc_html($quotation_error->getMessage())
+                        )
+                    );
                 }
-            } else {
-                throw new Exception('SAP returned success but no CardCode - check SAP logs');
             }
             
         } catch (Exception $e) {
@@ -1757,6 +2062,69 @@ class Shift8_GravitySAP {
                 'entry_data' => $entry
             ));
         }
+    }
+    
+    /**
+     * Check for existing Business Partner in SAP
+     *
+     * Uses the centralized lookup function in SAP Service to find matching BPs.
+     *
+     * @since 1.4.0
+     * @param Shift8_GravitySAP_SAP_Service $sap_service           SAP Service instance
+     * @param array                         $business_partner_data BP data with lookup fields
+     * @return string|null CardCode if found, null otherwise
+     */
+    private function check_for_existing_business_partner($sap_service, $business_partner_data) {
+        // Extract lookup fields from business partner data
+        $name = rgar($business_partner_data, 'CardName', '');
+        $country = '';
+        $postal = '';
+        
+        // Get country and postal from BPAddresses if present
+        $bp_addresses = rgar($business_partner_data, 'BPAddresses', array());
+        if (!empty($bp_addresses) && isset($bp_addresses[0])) {
+            $country = rgar($bp_addresses[0], 'Country', '');
+            $postal = rgar($bp_addresses[0], 'ZipCode', '');
+        }
+        
+        // If no address data in BPAddresses, check root level (for test data)
+        if (empty($country)) {
+            $country = rgar($business_partner_data, 'Country', '');
+        }
+        if (empty($postal)) {
+            $postal = rgar($business_partner_data, 'ZipCode', '');
+        }
+        
+        // Need at least name and country for lookup
+        if (empty($name) || empty($country)) {
+            shift8_gravitysap_debug_log('⚠️ Cannot check for existing BP: Missing required fields', array(
+                'name' => $name,
+                'country' => $country,
+                'postal' => $postal
+            ));
+            return null;
+        }
+        
+        shift8_gravitysap_debug_log('🔍 Checking for existing Business Partner', array(
+            'name' => $name,
+            'country' => $country,
+            'postal' => $postal
+        ));
+        
+        // Use centralized lookup function from SAP Service
+        $result = $sap_service->find_existing_business_partner($name, $country, $postal);
+        
+        if ($result['found'] && !empty($result['card_code'])) {
+            shift8_gravitysap_debug_log('✅ Found existing Business Partner', array(
+                'card_code' => $result['card_code'],
+                'card_name' => $result['card_name'],
+                'match_type' => $result['match_type']
+            ));
+            return $result['card_code'];
+        }
+        
+        shift8_gravitysap_debug_log('ℹ️ No existing Business Partner found');
+        return null;
     }
 
     /**
@@ -2039,15 +2407,16 @@ class Shift8_GravitySAP {
      * Create Sales Quotation from entry data
      *
      * @since 1.2.2
-     * @param array  $entry       Entry data
-     * @param array  $form        Form data
-     * @param array  $settings    Form settings
-     * @param string $card_code   Business Partner CardCode
-     * @param object $sap_service SAP Service instance
+     * @param array    $entry               Entry data
+     * @param array    $form                Form data
+     * @param array    $settings            Form settings
+     * @param string   $card_code           Business Partner CardCode
+     * @param object   $sap_service         SAP Service instance
+     * @param int|null $contact_person_code Contact Person InternalCode to link (optional)
      * @return array Created quotation data
      * @throws Exception If creation fails
      */
-    private function create_sales_quotation_from_entry($entry, $form, $settings, $card_code, $sap_service) {
+    private function create_sales_quotation_from_entry($entry, $form, $settings, $card_code, $sap_service, $contact_person_code = null) {
         shift8_gravitysap_debug_log('=== STARTING SALES QUOTATION CREATION ===');
         
         $quotation_mapping = rgar($settings, 'quotation_field_mapping', array());
@@ -2056,7 +2425,8 @@ class Shift8_GravitySAP {
         shift8_gravitysap_debug_log('Quotation configuration', array(
             'quotation_field_mapping' => $quotation_mapping,
             'itemcode_mapping' => $itemcode_mapping,
-            'entry_id' => $entry['id']
+            'entry_id' => $entry['id'],
+            'contact_person_code' => $contact_person_code
         ));
         
         if (empty($quotation_mapping)) {
@@ -2068,6 +2438,17 @@ class Shift8_GravitySAP {
             'CardCode' => $card_code,
             'DocumentLines' => array()
         );
+        
+        // Link Contact Person to the quotation if provided
+        // SAP B1 uses ContactPersonCode which is the InternalCode (numeric) of the contact
+        if (!empty($contact_person_code)) {
+            $quotation_data['ContactPersonCode'] = intval($contact_person_code);
+            
+            shift8_gravitysap_debug_log('Linking Contact Person to Sales Quotation', array(
+                'ContactPersonCode' => $contact_person_code,
+                'CardCode' => $card_code
+            ));
+        }
         
         // Add Comments if mapped
         if (!empty($quotation_mapping['Comments'])) {
@@ -2880,13 +3261,25 @@ class Shift8_GravitySAP {
             require_once SHIFT8_GRAVITYSAP_PLUGIN_DIR . 'includes/class-shift8-gravitysap-sap-service.php';
             $sap_service = new Shift8_GravitySAP_SAP_Service($plugin_settings);
             
-            // Create Business Partner in SAP
+            // Check for existing Business Partner if enabled
+            if (rgar($settings, 'check_existing_bp') === '1') {
+                $existing_card_code = $this->check_for_existing_business_partner($sap_service, $business_partner_data);
+                
+                if ($existing_card_code) {
+                    return array(
+                        'success' => true,
+                        'message' => '🔗 MATCHED: Found existing Business Partner with Card Code: ' . esc_html($existing_card_code)
+                    );
+                }
+            }
+            
+            // Create Business Partner in SAP (no match found or check disabled)
             $result = $sap_service->create_business_partner($business_partner_data);
             
             if ($result && isset($result['CardCode'])) {
                 return array(
                     'success' => true,
-                    'message' => 'Card Code: ' . esc_html($result['CardCode'])
+                    'message' => '✅ CREATED: New Business Partner with Card Code: ' . esc_html($result['CardCode'])
                 );
             } else {
                 return array(

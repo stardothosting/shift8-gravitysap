@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.3.8
+* Stable tag: 1.4.4
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -95,6 +95,33 @@ Checkbox fields are perfect for product selection forms. Each checkbox option be
 
 This is ideal for sample request forms, multi-product orders, and service selection forms.
 
+= How do I prevent duplicate Business Partners? =
+
+Enable **Check for existing Business Partner** in your form's SAP Integration settings. The plugin will search SAP B1 for existing Business Partners matching:
+
+* Business Partner Name (case-insensitive)
+* Country (from address)
+* Postal/ZIP Code (from address)
+
+If a match is found, the plugin uses the existing Business Partner instead of creating a duplicate. You can test this with WP-CLI:
+
+`wp shift8-gravitysap-bp-lookup search --name="Test Company" --country="CA" --postal="M5V 1A1"`
+
+= How are Contact Persons linked to Sales Quotations? =
+
+When a Business Partner match is found (or a new one is created), the plugin automatically:
+
+1. Adds a Contact Person to the Business Partner using the form's contact data
+2. Retrieves the Contact Person's InternalCode from SAP
+3. Links the Contact Person to the Sales Quotation via SAP's ContactPersonCode field
+
+**Result in SAP B1:**
+* Contact Person appears in the Business Partner's "Contact Persons" tab
+* Sales Quotation dropdown shows the correct Contact Person selected
+* Contact Person is properly linked for subsequent documents
+
+**Technical Note:** SAP B1's ContactPersonCode field requires the numeric InternalCode, not the text Name. The plugin handles this automatically.
+
 == Screenshots ==
 
 1. Main settings page with SAP connection configuration
@@ -103,6 +130,47 @@ This is ideal for sample request forms, multi-product orders, and service select
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.4.4 =
+* **NEW**: Duplicate contact detection - checks if contact already exists before adding
+* **NEW**: `find_existing_contact()` method for case-insensitive name + email matching
+* **IMPROVED**: Reuses existing contacts instead of creating duplicates on repeat submissions
+* **TESTING**: Added 10 new tests for contact duplicate detection (edge cases included)
+* **TESTING**: Now 138 tests with 306 assertions - All passing
+
+= 1.4.3 =
+* **FIX**: Contact Person now correctly linked to Sales Quotation using SAP's InternalCode (numeric) instead of Name (string)
+* **IMPROVED**: After adding Contact Person to existing BP, plugin now fetches BP to retrieve the contact's InternalCode
+* **IMPROVED**: Sales Quotation ContactPersonCode field now uses correct integer value for proper SAP B1 linking
+* **TESTING**: Added 3 additional Contact Person tests (InternalCode retrieval, existing Name field, first name only)
+* **TESTING**: Now 128 tests with 291 assertions - All passing
+* **DOCUMENTATION**: Added comprehensive contactPersonLinking section to .cursorrules
+
+= 1.4.2 =
+* **NEW**: Contact Person now added to existing Business Partner when match is found
+* **NEW**: Contact Person linked to Sales Quotation via ContactPersonCode field
+* **IMPROVED**: SAP Service class now includes `add_contact_to_business_partner()` and `get_business_partner()` methods
+* **TESTING**: Added 6 new unit tests for Contact Person functionality
+* **TESTING**: Now 125 tests with 283 assertions - All passing
+
+= 1.4.1 =
+* **TESTING**: Added comprehensive test coverage for async processing (9 new tests)
+* **TESTING**: Added comprehensive test coverage for Business Partner lookup (10 new tests)
+* **TESTING**: Now 119 tests with 272 assertions - All passing
+* **DOCUMENTATION**: Updated .cursorrules with async processing, BP lookup, and testing patterns
+
+= 1.4.0 =
+* **NEW**: Async processing for form submissions - SAP integration now runs in a non-blocking background request
+* **NEW**: "Check for Existing Business Partner" now integrated into form submission flow
+* **NEW**: Test Integration button now supports existing BP lookup when enabled
+* **IMPROVED**: Form submissions no longer block on SAP API response time (1-2 seconds faster)
+* **IMPROVED**: Centralized Business Partner lookup logic for code reuse across WP-CLI, form processing, and test integration
+
+= 1.3.9 =
+* **NEW**: Added "Check for Existing Business Partner" toggle setting
+* **NEW**: Added WP-CLI command `wp shift8-gravitysap-bp-lookup search` to test duplicate detection
+* **NEW**: Added WP-CLI command `wp shift8-gravitysap-bp-lookup benchmark` to measure SAP query performance
+* **ENHANCEMENT**: Duplicate detection matches on Business Partner Name (case-insensitive), Country, and Postal Code
 
 = 1.3.8 =
 * **FIX**: Test data values now properly save with "Update Settings" button

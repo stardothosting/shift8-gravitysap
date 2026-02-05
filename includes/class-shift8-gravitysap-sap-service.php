@@ -249,6 +249,245 @@ class Shift8_GravitySAP_SAP_Service {
     }
 
     /**
+     * Find an existing Contact Person on a Business Partner by name and/or email
+     *
+     * Searches the Business Partner's ContactEmployees for a match using case-insensitive
+     * comparison on Name AND Email (both must match if both are provided).
+     *
+     * @since 1.4.4
+     * @param string $card_code     The Business Partner CardCode
+     * @param string $contact_name  The contact person's full name to match
+     * @param string $contact_email The contact person's email to match (optional but recommended)
+     * @return array|null The matching contact data with InternalCode, or null if not found
+     */
+    public function find_existing_contact($card_code, $contact_name, $contact_email = '') {
+        shift8_gravitysap_debug_log('=== SEARCHING FOR EXISTING CONTACT PERSON ===', array(
+            'CardCode' => $card_code,
+            'SearchName' => $contact_name,
+            'SearchEmail' => $contact_email
+        ));
+
+        if (empty($card_code) || empty($contact_name)) {
+            shift8_gravitysap_debug_log('Find Contact: Missing CardCode or contact name');
+            return null;
+        }
+
+        // Fetch the Business Partner with its contacts
+        $bp_data = $this->get_business_partner($card_code);
+        
+        if (!$bp_data || empty($bp_data['ContactEmployees'])) {
+            shift8_gravitysap_debug_log('Find Contact: No existing contacts found on BP', array(
+                'CardCode' => $card_code
+            ));
+            return null;
+        }
+
+        // Normalize search values for case-insensitive comparison
+        $search_name = strtolower(trim($contact_name));
+        $search_email = !empty($contact_email) ? strtolower(trim($contact_email)) : '';
+
+        shift8_gravitysap_debug_log('Find Contact: Searching through contacts', array(
+            'ContactCount' => count($bp_data['ContactEmployees']),
+            'NormalizedName' => $search_name,
+            'NormalizedEmail' => $search_email
+        ));
+
+        foreach ($bp_data['ContactEmployees'] as $contact) {
+            $existing_name = isset($contact['Name']) ? strtolower(trim($contact['Name'])) : '';
+            $existing_email = isset($contact['E_Mail']) ? strtolower(trim($contact['E_Mail'])) : '';
+
+            // Match logic: Name must match, and if email is provided, email must also match
+            $name_matches = ($existing_name === $search_name);
+            $email_matches = empty($search_email) || ($existing_email === $search_email);
+
+            if ($name_matches && $email_matches) {
+                shift8_gravitysap_debug_log('✅ Found matching contact', array(
+                    'MatchedName' => $contact['Name'] ?? 'N/A',
+                    'MatchedEmail' => $contact['E_Mail'] ?? 'N/A',
+                    'InternalCode' => $contact['InternalCode'] ?? 'N/A'
+                ));
+                return $contact;
+            }
+        }
+
+        shift8_gravitysap_debug_log('Find Contact: No matching contact found', array(
+            'CardCode' => $card_code,
+            'SearchedName' => $contact_name,
+            'SearchedEmail' => $contact_email
+        ));
+
+        return null;
+    }
+
+    /**
+     * Add a Contact Person to an existing Business Partner
+     *
+     * Uses PATCH to update the Business Partner with a new ContactEmployees entry.
+     * SAP B1 will append the new contact to existing contacts.
+     *
+     * @since 1.4.2
+     * @param string $card_code    The Business Partner CardCode
+     * @param array  $contact_data Contact person data (FirstName, LastName, Phone1, E_Mail, Address)
+     * @return array|null The contact person data with InternalCode if successful, null on failure
+     */
+    public function add_contact_to_business_partner($card_code, $contact_data) {
+        shift8_gravitysap_debug_log('=== ADDING CONTACT TO EXISTING BUSINESS PARTNER ===', array(
+            'CardCode' => $card_code,
+            'ContactData' => $contact_data
+        ));
+
+        // Validate inputs
+        if (empty($card_code)) {
+            shift8_gravitysap_debug_log('Add Contact: Missing CardCode');
+            return null;
+        }
+
+        if (empty($contact_data) || !is_array($contact_data)) {
+            shift8_gravitysap_debug_log('Add Contact: No contact data provided');
+            return null;
+        }
+
+        // Ensure authenticated
+        if (!$this->ensure_authenticated()) {
+            shift8_gravitysap_debug_log('Add Contact: Authentication failed');
+            return null;
+        }
+
+        // Build the contact person object
+        $contact_person = array();
+
+        // Check if Name is already provided in contact_data (from map_form_data_to_sap_fields)
+        $first_name = isset($contact_data['FirstName']) ? trim($contact_data['FirstName']) : '';
+        $last_name = isset($contact_data['LastName']) ? trim($contact_data['LastName']) : '';
+        $existing_name = isset($contact_data['Name']) ? trim($contact_data['Name']) : '';
+        
+        if (!empty($first_name) && !empty($last_name)) {
+            $contact_person['Name'] = $first_name . ' ' . $last_name;
+            $contact_person['FirstName'] = $first_name;
+            $contact_person['LastName'] = $last_name;
+        } elseif (!empty($first_name)) {
+            $contact_person['Name'] = $first_name;
+            $contact_person['FirstName'] = $first_name;
+        } elseif (!empty($last_name)) {
+            $contact_person['Name'] = $last_name;
+            $contact_person['LastName'] = $last_name;
+        } elseif (!empty($existing_name)) {
+            // Use the pre-constructed Name if FirstName/LastName not available
+            $contact_person['Name'] = $existing_name;
+        } else {
+            // No name provided - use a default or skip
+            shift8_gravitysap_debug_log('Add Contact: No name provided, skipping contact creation');
+            return null;
+        }
+
+        // Add optional contact fields
+        if (!empty($contact_data['Phone1'])) {
+            $contact_person['Phone1'] = $contact_data['Phone1'];
+        }
+        if (!empty($contact_data['E_Mail'])) {
+            $contact_person['E_Mail'] = $contact_data['E_Mail'];
+        }
+        if (!empty($contact_data['Address'])) {
+            $contact_person['Address'] = $contact_data['Address'];
+        }
+
+        // Build PATCH payload - SAP B1 appends to existing ContactEmployees
+        $patch_data = array(
+            'ContactEmployees' => array($contact_person)
+        );
+
+        shift8_gravitysap_debug_log('Add Contact: Sending PATCH request', array(
+            'CardCode' => $card_code,
+            'PatchData' => $patch_data
+        ));
+
+        // Send PATCH request to update the Business Partner
+        $endpoint = "/BusinessPartners('" . rawurlencode($card_code) . "')";
+        $response = $this->make_request('PATCH', $endpoint, $patch_data);
+
+        if (is_wp_error($response)) {
+            shift8_gravitysap_debug_log('Add Contact: PATCH request failed', array(
+                'error' => $response->get_error_message()
+            ));
+            return null;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+
+        // 204 No Content is success for PATCH
+        if ($response_code === 204) {
+            shift8_gravitysap_debug_log('✅ Contact Person added successfully to ' . $card_code);
+            
+            // Return the contact person data (SAP doesn't return the created contact in PATCH response)
+            // We need to fetch the BP to get the InternalCode of the newly added contact
+            $contact_person['CardCode'] = $card_code;
+            
+            // Try to get the newly created contact's InternalCode by fetching the BP
+            $bp_response = $this->get_business_partner($card_code);
+            if ($bp_response && isset($bp_response['ContactEmployees'])) {
+                // Find the contact we just added (last one in the array, or match by name)
+                $contacts = $bp_response['ContactEmployees'];
+                foreach (array_reverse($contacts) as $contact) {
+                    if (isset($contact['Name']) && $contact['Name'] === $contact_person['Name']) {
+                        $contact_person['InternalCode'] = $contact['InternalCode'] ?? null;
+                        break;
+                    }
+                }
+            }
+            
+            return $contact_person;
+        } else {
+            // Handle error response
+            $body = wp_remote_retrieve_body($response);
+            $error_data = json_decode($body, true);
+            
+            $error_message = 'Unknown error';
+            if (!empty($error_data['error']['message']['value'])) {
+                $error_message = $error_data['error']['message']['value'];
+            }
+            
+            shift8_gravitysap_debug_log('Add Contact: PATCH failed', array(
+                'status_code' => $response_code,
+                'error' => $error_message
+            ));
+            
+            return null;
+        }
+    }
+
+    /**
+     * Get a Business Partner by CardCode
+     *
+     * @since 1.4.2
+     * @param string $card_code The Business Partner CardCode
+     * @return array|null The Business Partner data or null on failure
+     */
+    public function get_business_partner($card_code) {
+        if (empty($card_code)) {
+            return null;
+        }
+
+        if (!$this->ensure_authenticated()) {
+            return null;
+        }
+
+        $endpoint = "/BusinessPartners('" . rawurlencode($card_code) . "')";
+        $response = $this->make_request('GET', $endpoint);
+
+        if (is_wp_error($response)) {
+            return null;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        if ($response_code === 200) {
+            $body = wp_remote_retrieve_body($response);
+            return json_decode($body, true);
+        }
+
+        return null;
+    }
+
+    /**
      * Make HTTP request to SAP Service Layer
      */
     private function make_request($method, $endpoint, $data = null) {
@@ -1056,6 +1295,199 @@ class Shift8_GravitySAP_SAP_Service {
         if ($response_code === 200) {
             $body = wp_remote_retrieve_body($response);
             return json_decode($body, true);
+        }
+
+        return false;
+    }
+
+    /**
+     * Find an existing Business Partner matching name, country, and postal code
+     *
+     * This method searches SAP B1 for an existing Business Partner that matches:
+     * - CardName (case-insensitive)
+     * - Country (from BPAddresses)
+     * - ZipCode/Postal (from BPAddresses)
+     *
+     * @since 1.3.9
+     * @param string $name Business Partner name (case-insensitive comparison)
+     * @param string $country 2-letter country code
+     * @param string $postal Postal/ZIP code
+     * @return array Result with 'found', 'card_code', 'card_name', etc.
+     */
+    public function find_existing_business_partner($name, $country, $postal) {
+        $result = array(
+            'found' => false,
+            'card_code' => null,
+            'card_name' => null,
+            'address_country' => null,
+            'address_postal' => null,
+            'records_scanned' => 0,
+            'error' => null
+        );
+
+        // Validate inputs
+        if (empty($name) || empty($country) || empty($postal)) {
+            $result['error'] = 'Name, country, and postal code are all required for lookup';
+            shift8_gravitysap_debug_log('BP Lookup: Missing required parameters', array(
+                'name' => !empty($name),
+                'country' => !empty($country),
+                'postal' => !empty($postal)
+            ));
+            return $result;
+        }
+
+        // Ensure authenticated
+        if (!$this->ensure_authenticated()) {
+            $result['error'] = 'Failed to authenticate with SAP';
+            return $result;
+        }
+
+        shift8_gravitysap_debug_log('=== STARTING BUSINESS PARTNER LOOKUP ===', array(
+            'name' => $name,
+            'country' => $country,
+            'postal' => $postal
+        ));
+
+        // Normalize search name for case-insensitive comparison
+        $search_name_normalized = strtolower(trim($name));
+
+        // Escape single quotes for OData query
+        $escaped_name = str_replace("'", "''", $name);
+
+        // Select fields including BPAddresses
+        $select = 'CardCode,CardName,BPAddresses';
+
+        // Strategy 1: Try exact CardName match first (most efficient)
+        $filter = "CardName eq '{$escaped_name}'";
+        $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}";
+
+        shift8_gravitysap_debug_log('BP Lookup Strategy 1: Exact match', array('filter' => $filter));
+
+        $response = $this->make_request('GET', $query);
+        $exact_matches = $this->parse_bp_lookup_response($response);
+
+        foreach ($exact_matches as $bp) {
+            if ($this->bp_has_matching_address($bp, $country, $postal)) {
+                $result['found'] = true;
+                $result['card_code'] = $bp['CardCode'];
+                $result['card_name'] = $bp['CardName'];
+                $result['address_country'] = $country;
+                $result['address_postal'] = $postal;
+                $result['records_scanned'] = count($exact_matches);
+
+                shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (exact)', array(
+                    'card_code' => $bp['CardCode'],
+                    'card_name' => $bp['CardName']
+                ));
+                return $result;
+            }
+        }
+
+        // Strategy 2: Broader search with 'startswith' for case variations
+        $first_word = explode(' ', trim($name))[0];
+        $escaped_first_word = str_replace("'", "''", $first_word);
+
+        if (strlen($first_word) >= 3) {
+            $filter = "startswith(CardName, '{$escaped_first_word}')";
+            $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}&\$top=100";
+
+            shift8_gravitysap_debug_log('BP Lookup Strategy 2: Startswith', array('filter' => $filter));
+
+            $response = $this->make_request('GET', $query);
+            $startswith_matches = $this->parse_bp_lookup_response($response);
+
+            $result['records_scanned'] += count($startswith_matches);
+
+            foreach ($startswith_matches as $bp) {
+                $bp_name_normalized = strtolower(trim($bp['CardName'] ?? ''));
+
+                // Case-insensitive name match AND address match
+                if ($bp_name_normalized === $search_name_normalized && 
+                    $this->bp_has_matching_address($bp, $country, $postal)) {
+                    
+                    $result['found'] = true;
+                    $result['card_code'] = $bp['CardCode'];
+                    $result['card_name'] = $bp['CardName'];
+                    $result['address_country'] = $country;
+                    $result['address_postal'] = $postal;
+
+                    shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (case-insensitive)', array(
+                        'card_code' => $bp['CardCode'],
+                        'card_name' => $bp['CardName']
+                    ));
+                    return $result;
+                }
+            }
+        }
+
+        shift8_gravitysap_debug_log('BP Lookup: No match found', array(
+            'records_scanned' => $result['records_scanned']
+        ));
+
+        return $result;
+    }
+
+    /**
+     * Parse Business Partner lookup response
+     *
+     * @since 1.3.9
+     * @param mixed $response HTTP response
+     * @return array Array of Business Partners
+     */
+    private function parse_bp_lookup_response($response) {
+        if (is_wp_error($response)) {
+            shift8_gravitysap_debug_log('BP Lookup query failed', array(
+                'error' => $response->get_error_message()
+            ));
+            return array();
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            $body = wp_remote_retrieve_body($response);
+            $error_data = json_decode($body, true);
+            shift8_gravitysap_debug_log('BP Lookup query error', array(
+                'http_code' => $code,
+                'error' => $error_data['error']['message']['value'] ?? 'Unknown error'
+            ));
+            return array();
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if (!isset($data['value'])) {
+            return array();
+        }
+
+        shift8_gravitysap_debug_log('BP Lookup query result', array(
+            'count' => count($data['value'])
+        ));
+
+        return $data['value'];
+    }
+
+    /**
+     * Check if Business Partner has matching address
+     *
+     * @since 1.3.9
+     * @param array $bp Business Partner data
+     * @param string $country Country code
+     * @param string $postal Postal code
+     * @return bool True if address matches
+     */
+    private function bp_has_matching_address($bp, $country, $postal) {
+        if (!isset($bp['BPAddresses']) || !is_array($bp['BPAddresses'])) {
+            return false;
+        }
+
+        foreach ($bp['BPAddresses'] as $addr) {
+            $addr_country = $addr['Country'] ?? '';
+            $addr_postal = $addr['ZipCode'] ?? '';
+
+            if ($addr_country === $country && $addr_postal === $postal) {
+                return true;
+            }
         }
 
         return false;

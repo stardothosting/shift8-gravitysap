@@ -1321,3 +1321,278 @@ class Shift8_GravitySAP_MasterData_Command {
 }
 
 WP_CLI::add_command('shift8-gravitysap-masterdata', 'Shift8_GravitySAP_MasterData_Command');
+
+/**
+ * Test Business Partner lookup for duplicate detection
+ * 
+ * This command tests the performance and accuracy of looking up existing
+ * Business Partners in SAP B1 based on name, country, and postal code.
+ */
+class Shift8_GravitySAP_BP_Lookup_Command {
+    
+    /**
+     * Search for existing Business Partners matching criteria
+     *
+     * ## OPTIONS
+     *
+     * --name=<name>
+     * : Business Partner name to search for (case-insensitive)
+     *
+     * --country=<country>
+     * : 2-letter country code (e.g., US, CA, GB)
+     *
+     * --postal=<postal>
+     * : Postal/ZIP code
+     *
+     * [--verbose]
+     * : Show detailed timing and query information
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-bp-lookup search --name="Test Company" --country=US --postal=12345
+     *     wp shift8-gravitysap-bp-lookup search --name="Acme Corp" --country=CA --postal="M5V 1A1" --verbose
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function search($args, $assoc_args) {
+        $name = isset($assoc_args['name']) ? sanitize_text_field($assoc_args['name']) : '';
+        $country = isset($assoc_args['country']) ? strtoupper(sanitize_text_field($assoc_args['country'])) : '';
+        $postal = isset($assoc_args['postal']) ? sanitize_text_field($assoc_args['postal']) : '';
+        $verbose = isset($assoc_args['verbose']);
+        
+        if (empty($name)) {
+            WP_CLI::error('Please specify a Business Partner name: --name="Company Name"');
+            return;
+        }
+        
+        if (empty($country)) {
+            WP_CLI::error('Please specify a country code: --country=US');
+            return;
+        }
+        
+        if (empty($postal)) {
+            WP_CLI::error('Please specify a postal code: --postal=12345');
+            return;
+        }
+        
+        WP_CLI::line('');
+        WP_CLI::line('=== Business Partner Lookup Test ===');
+        WP_CLI::line('');
+        WP_CLI::line('Search Criteria:');
+        WP_CLI::line("  Name:    {$name} (case-insensitive)");
+        WP_CLI::line("  Country: {$country}");
+        WP_CLI::line("  Postal:  {$postal}");
+        WP_CLI::line('');
+        
+        try {
+            // Get SAP settings
+            $sap_settings = get_option('shift8_gravitysap_settings', array());
+            
+            if (empty($sap_settings['sap_endpoint']) || empty($sap_settings['sap_username']) || empty($sap_settings['sap_password'])) {
+                WP_CLI::error('SAP connection settings not configured.');
+                return;
+            }
+            
+            // Decrypt password
+            $sap_settings['sap_password'] = shift8_gravitysap_decrypt_password($sap_settings['sap_password']);
+            
+            // Create SAP service
+            require_once plugin_dir_path(__FILE__) . 'includes/class-shift8-gravitysap-sap-service.php';
+            $sap_service = new Shift8_GravitySAP_SAP_Service($sap_settings);
+            
+            // Authenticate
+            $reflection = new ReflectionClass($sap_service);
+            $auth_method = $reflection->getMethod('ensure_authenticated');
+            $auth_method->setAccessible(true);
+            
+            $auth_start = microtime(true);
+            if (!$auth_method->invoke($sap_service)) {
+                WP_CLI::error('Failed to authenticate with SAP B1');
+                return;
+            }
+            $auth_time = round((microtime(true) - $auth_start) * 1000, 2);
+            
+            if ($verbose) {
+                WP_CLI::line("Authentication time: {$auth_time}ms");
+            }
+            
+            // Perform the lookup using centralized method
+            $lookup_start = microtime(true);
+            $result = $sap_service->find_existing_business_partner($name, $country, $postal);
+            $lookup_time = round((microtime(true) - $lookup_start) * 1000, 2);
+            
+            WP_CLI::line('');
+            WP_CLI::line(str_repeat('-', 60));
+            WP_CLI::line('');
+            
+            if ($result['found']) {
+                WP_CLI::success("Found matching Business Partner!");
+                WP_CLI::line('');
+                WP_CLI::line("  CardCode: {$result['card_code']}");
+                WP_CLI::line("  CardName: {$result['card_name']}");
+                if (!empty($result['address_country'])) {
+                    WP_CLI::line("  Country:  {$result['address_country']}");
+                }
+                if (!empty($result['address_postal'])) {
+                    WP_CLI::line("  Postal:   {$result['address_postal']}");
+                }
+            } else {
+                WP_CLI::warning("No matching Business Partner found.");
+                WP_CLI::line("  A new Business Partner would be created for this submission.");
+            }
+            
+            WP_CLI::line('');
+            WP_CLI::line('Performance Metrics:');
+            WP_CLI::line("  Authentication: {$auth_time}ms");
+            WP_CLI::line("  Lookup Query:   {$lookup_time}ms");
+            WP_CLI::line("  Total Time:     " . round($auth_time + $lookup_time, 2) . "ms");
+            
+            if (isset($result['records_scanned'])) {
+                WP_CLI::line("  Records Scanned: {$result['records_scanned']}");
+            }
+            
+            WP_CLI::line('');
+            
+            // Performance recommendation
+            $total_time = $auth_time + $lookup_time;
+            if ($total_time > 3000) {
+                WP_CLI::warning("Lookup time exceeds 3 seconds. Consider moving SAP processing to a background cron job.");
+            } elseif ($total_time > 1000) {
+                WP_CLI::line("Note: Lookup time is moderate. For high-traffic forms, consider async processing.");
+            } else {
+                WP_CLI::success("Lookup time is acceptable for synchronous processing.");
+            }
+            
+            WP_CLI::line('');
+            
+        } catch (Exception $e) {
+            WP_CLI::error('Error: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Find an existing Business Partner matching the criteria
+     *
+     * SAP B1 Service Layer has limited OData support - it doesn't support:
+     * - tolower() for case-insensitive comparisons
+     * - any() for filtering on collections
+     * 
+     * Strategy: Query BPs with CardName containing the search term, then filter
+     * client-side for exact match (case-insensitive) and address criteria.
+     *
+     * @param ReflectionMethod $request_method The SAP make_request method
+     * @param object $sap_service The SAP service instance
+     * @param string $name Business Partner name (case-insensitive)
+     * @param string $country 2-letter country code
+    /**
+     * Benchmark the lookup performance with multiple queries
+     *
+     * ## OPTIONS
+     *
+     * [--iterations=<num>]
+     * : Number of test iterations (default: 5)
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-bp-lookup benchmark
+     *     wp shift8-gravitysap-bp-lookup benchmark --iterations=10
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function benchmark($args, $assoc_args) {
+        $iterations = isset($assoc_args['iterations']) ? absint($assoc_args['iterations']) : 5;
+        
+        if ($iterations < 1 || $iterations > 20) {
+            WP_CLI::error('Iterations must be between 1 and 20');
+            return;
+        }
+        
+        WP_CLI::line('');
+        WP_CLI::line('=== Business Partner Lookup Benchmark ===');
+        WP_CLI::line('');
+        WP_CLI::line("Running {$iterations} iterations with sample queries...");
+        WP_CLI::line('');
+        
+        try {
+            // Get SAP settings
+            $sap_settings = get_option('shift8_gravitysap_settings', array());
+            
+            if (empty($sap_settings['sap_endpoint'])) {
+                WP_CLI::error('SAP connection settings not configured.');
+                return;
+            }
+            
+            // Decrypt password
+            $sap_settings['sap_password'] = shift8_gravitysap_decrypt_password($sap_settings['sap_password']);
+            
+            // Create SAP service
+            require_once plugin_dir_path(__FILE__) . 'includes/class-shift8-gravitysap-sap-service.php';
+            $sap_service = new Shift8_GravitySAP_SAP_Service($sap_settings);
+            
+            // Authenticate once
+            $reflection = new ReflectionClass($sap_service);
+            $auth_method = $reflection->getMethod('ensure_authenticated');
+            $auth_method->setAccessible(true);
+            
+            if (!$auth_method->invoke($sap_service)) {
+                WP_CLI::error('Failed to authenticate with SAP B1');
+                return;
+            }
+            
+            $request_method = $reflection->getMethod('make_request');
+            $request_method->setAccessible(true);
+            
+            // Run benchmark queries (simple count query, no filtering)
+            $times = array();
+            
+            for ($i = 1; $i <= $iterations; $i++) {
+                $start = microtime(true);
+                
+                // Simple query to measure baseline latency
+                $response = $request_method->invoke(
+                    $sap_service, 
+                    'GET', 
+                    '/BusinessPartners?$top=1&$select=CardCode,CardName'
+                );
+                
+                $elapsed = round((microtime(true) - $start) * 1000, 2);
+                $times[] = $elapsed;
+                
+                $status = is_wp_error($response) ? 'ERROR' : 'OK';
+                WP_CLI::line("  Iteration {$i}: {$elapsed}ms ({$status})");
+            }
+            
+            // Calculate statistics
+            $avg = round(array_sum($times) / count($times), 2);
+            $min = round(min($times), 2);
+            $max = round(max($times), 2);
+            
+            WP_CLI::line('');
+            WP_CLI::line(str_repeat('-', 40));
+            WP_CLI::line('');
+            WP_CLI::line('Results:');
+            WP_CLI::line("  Average: {$avg}ms");
+            WP_CLI::line("  Min:     {$min}ms");
+            WP_CLI::line("  Max:     {$max}ms");
+            WP_CLI::line('');
+            
+            // Recommendations
+            if ($avg > 2000) {
+                WP_CLI::warning("Average response time > 2s. Strongly recommend async processing via cron.");
+            } elseif ($avg > 500) {
+                WP_CLI::line("Average response time is moderate. Consider async processing for better UX.");
+            } else {
+                WP_CLI::success("Response times are good for synchronous processing.");
+            }
+            
+            WP_CLI::line('');
+            
+        } catch (Exception $e) {
+            WP_CLI::error('Error: ' . $e->getMessage());
+        }
+    }
+}
+
+WP_CLI::add_command('shift8-gravitysap-bp-lookup', 'Shift8_GravitySAP_BP_Lookup_Command');
