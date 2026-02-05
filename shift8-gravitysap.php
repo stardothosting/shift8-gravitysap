@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.3.6
+ * Version: 1.3.7
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.3.6');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.3.7');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -183,6 +183,14 @@ class Shift8_GravitySAP {
      * @var Shift8_GravitySAP|null
      */
     private static $instance = null;
+
+    /**
+     * SAP validation errors for display in form validation message
+     *
+     * @since 1.3.7
+     * @var array
+     */
+    private $sap_validation_errors = array();
     
     /**
      * Get plugin instance (Singleton pattern)
@@ -3030,6 +3038,7 @@ class Shift8_GravitySAP {
 
         $sap_field_limits = $this->get_sap_field_limits();
         $validation_errors = 0;
+        $error_details = array(); // Collect detailed error messages for summary
 
         foreach ($field_mapping as $sap_field => $field_id) {
             if (!isset($sap_field_limits[$sap_field])) {
@@ -3037,9 +3046,22 @@ class Shift8_GravitySAP {
                 continue;
             }
             
-            $field = RGFormsModel::get_field($form, $field_id);
-            if (!$field) {
-                shift8_gravitysap_debug_log('Could not find form field', array('field_id' => $field_id));
+            // Get the base field ID (handle subfield IDs like "1.3")
+            $base_field_id = intval($field_id);
+            
+            // Find the field index in the form's fields array - we need to modify it directly
+            $field_index = null;
+            $field = null;
+            foreach ($validation_result['form']['fields'] as $index => $form_field) {
+                if ($form_field->id == $base_field_id) {
+                    $field_index = $index;
+                    $field = $form_field;
+                    break;
+                }
+            }
+            
+            if ($field === null) {
+                shift8_gravitysap_debug_log('Could not find form field', array('field_id' => $field_id, 'base_field_id' => $base_field_id));
                 continue;
             }
             
@@ -3143,12 +3165,14 @@ class Shift8_GravitySAP {
 
             // Check required fields
             if ($limits['required'] && empty($field_value)) {
-                $validation_result['is_valid'] = false;
-                $field->failed_validation = true;
-                $field->validation_message = sprintf(
+                $error_msg = sprintf(
                     esc_html__('%s is required for SAP Business Partner creation.', 'shift8-gravity-forms-sap-b1-integration'),
                     esc_html($field_label)
                 );
+                $validation_result['is_valid'] = false;
+                $validation_result['form']['fields'][$field_index]->failed_validation = true;
+                $validation_result['form']['fields'][$field_index]->validation_message = $error_msg;
+                $error_details[] = $error_msg;
                 $validation_errors++;
                 shift8_gravitysap_debug_log('Required field validation failed', array('field' => $field_label));
                 continue;
@@ -3166,28 +3190,39 @@ class Shift8_GravitySAP {
 
             if ($field_length > $max_length) {
                 $validation_result['is_valid'] = false;
-                $field->failed_validation = true;
+                $validation_result['form']['fields'][$field_index]->failed_validation = true;
                 
+                // Truncate displayed value if too long for readability
+                $display_value = strlen($field_value) > 50 ? substr($field_value, 0, 47) . '...' : $field_value;
                 $custom_message = isset($limits['validation_message']) ? $limits['validation_message'] : '';
+                
                 if ($custom_message) {
-                    $field->validation_message = sprintf(
-                        esc_html__('%s: %s (Current: %d chars, Max: %d)', 'shift8-gravity-forms-sap-b1-integration'),
+                    $error_msg = sprintf(
+                        /* translators: 1: field label, 2: submitted value, 3: character count, 4: max allowed, 5: custom hint */
+                        esc_html__('SAP Validation Error - %1$s: You entered "%2$s" (%3$d chars) but max is %4$d chars. Hint: %5$s', 'shift8-gravity-forms-sap-b1-integration'),
                         esc_html($field_label),
-                        esc_html($custom_message),
+                        esc_html($display_value),
+                        $field_length,
+                        $max_length,
+                        esc_html($custom_message)
+                    );
+                } else {
+                    $error_msg = sprintf(
+                        /* translators: 1: field label, 2: submitted value, 3: character count, 4: max allowed */
+                        esc_html__('SAP Validation Error - %1$s: You entered "%2$s" (%3$d chars) but max is %4$d chars.', 'shift8-gravity-forms-sap-b1-integration'),
+                        esc_html($field_label),
+                        esc_html($display_value),
                         $field_length,
                         $max_length
                     );
-                } else {
-                    $field->validation_message = sprintf(
-                        esc_html__('%s cannot exceed %d characters (currently %d characters).', 'shift8-gravity-forms-sap-b1-integration'),
-                        esc_html($field_label),
-                        $max_length,
-                        $field_length
-                    );
                 }
+                
+                $validation_result['form']['fields'][$field_index]->validation_message = $error_msg;
+                $error_details[] = $error_msg;
                 $validation_errors++;
                 shift8_gravitysap_debug_log('Length validation failed', array(
                     'field' => $field_label,
+                    'submitted_value' => $field_value,
                     'current_length' => $field_length,
                     'max_length' => $max_length
                 ));
@@ -3196,12 +3231,16 @@ class Shift8_GravitySAP {
 
             // Check email format
             if (isset($limits['format']) && $limits['format'] === 'email' && !is_email($field_value)) {
-                $validation_result['is_valid'] = false;
-                $field->failed_validation = true;
-                $field->validation_message = sprintf(
-                    esc_html__('%s must be a valid email address.', 'shift8-gravity-forms-sap-b1-integration'),
-                    esc_html($field_label)
+                $error_msg = sprintf(
+                    /* translators: 1: field label, 2: submitted value */
+                    esc_html__('SAP Validation Error - %1$s: "%2$s" is not a valid email address.', 'shift8-gravity-forms-sap-b1-integration'),
+                    esc_html($field_label),
+                    esc_html($field_value)
                 );
+                $validation_result['is_valid'] = false;
+                $validation_result['form']['fields'][$field_index]->failed_validation = true;
+                $validation_result['form']['fields'][$field_index]->validation_message = $error_msg;
+                $error_details[] = $error_msg;
                 $validation_errors++;
                 shift8_gravitysap_debug_log('Email validation failed', array('field' => $field_label, 'value' => $field_value));
                 continue;
@@ -3209,12 +3248,16 @@ class Shift8_GravitySAP {
 
             // Check URL format
             if (isset($limits['format']) && $limits['format'] === 'url' && !filter_var($field_value, FILTER_VALIDATE_URL)) {
-                $validation_result['is_valid'] = false;
-                $field->failed_validation = true;
-                $field->validation_message = sprintf(
-                    esc_html__('%s must be a valid URL.', 'shift8-gravity-forms-sap-b1-integration'),
-                    esc_html($field_label)
+                $error_msg = sprintf(
+                    /* translators: 1: field label, 2: submitted value */
+                    esc_html__('SAP Validation Error - %1$s: "%2$s" is not a valid URL. Must start with http:// or https://', 'shift8-gravity-forms-sap-b1-integration'),
+                    esc_html($field_label),
+                    esc_html($field_value)
                 );
+                $validation_result['is_valid'] = false;
+                $validation_result['form']['fields'][$field_index]->failed_validation = true;
+                $validation_result['form']['fields'][$field_index]->validation_message = $error_msg;
+                $error_details[] = $error_msg;
                 $validation_errors++;
                 shift8_gravitysap_debug_log('URL validation failed', array('field' => $field_label, 'value' => $field_value));
                 continue;
@@ -3225,10 +3268,48 @@ class Shift8_GravitySAP {
 
         shift8_gravitysap_debug_log('=== SAP FIELD VALIDATION COMPLETED ===', array(
             'total_errors' => $validation_errors,
-            'is_valid' => $validation_result['is_valid']
+            'is_valid' => $validation_result['is_valid'],
+            'error_details' => $error_details
         ));
 
+        // Store error details for the validation message filter
+        if (!empty($error_details)) {
+            $this->sap_validation_errors = $error_details;
+            add_filter('gform_validation_message', array($this, 'customize_sap_validation_message'), 10, 2);
+        }
+
         return $validation_result;
+    }
+
+    /**
+     * Customize the validation message to show detailed SAP errors
+     *
+     * @param string $message The default validation message
+     * @param array $form The form array
+     * @return string The customized validation message
+     */
+    public function customize_sap_validation_message($message, $form) {
+        // Only modify if we have SAP validation errors
+        if (empty($this->sap_validation_errors)) {
+            return $message;
+        }
+
+        $error_list = '<ul style="margin: 10px 0; padding-left: 20px;">';
+        foreach ($this->sap_validation_errors as $error) {
+            $error_list .= '<li style="margin: 5px 0;">' . $error . '</li>';
+        }
+        $error_list .= '</ul>';
+
+        $custom_message = '<div class="validation_error" role="alert">';
+        $custom_message .= '<strong>' . esc_html__('SAP Integration Validation Failed:', 'shift8-gravity-forms-sap-b1-integration') . '</strong>';
+        $custom_message .= $error_list;
+        $custom_message .= '<p style="margin-top: 10px; font-size: 0.9em;">' . esc_html__('Please correct the highlighted fields below to meet SAP Business One requirements.', 'shift8-gravity-forms-sap-b1-integration') . '</p>';
+        $custom_message .= '</div>';
+
+        // Clear the errors after displaying
+        $this->sap_validation_errors = array();
+
+        return $custom_message;
     }
 }
 

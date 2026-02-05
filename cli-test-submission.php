@@ -1127,3 +1127,197 @@ class Shift8_GravitySAP_ItemCode_Test_Command {
 }
 
 WP_CLI::add_command('shift8-gravitysap-itemcodes', 'Shift8_GravitySAP_ItemCode_Test_Command');
+
+/**
+ * Query SAP B1 master data (Groups, Currencies, Price Lists, etc.)
+ */
+class Shift8_GravitySAP_MasterData_Command {
+    
+    /**
+     * List Business Partner Groups from SAP B1
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-masterdata groups
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function groups($args, $assoc_args) {
+        $this->query_sap_endpoint(
+            '/BusinessPartnerGroups',
+            'Business Partner Groups',
+            array('Code', 'Name', 'Type'),
+            function($item) {
+                return sprintf(
+                    "Code: %-6s | Name: %s | Type: %s",
+                    $item['Code'] ?? 'N/A',
+                    $item['Name'] ?? 'N/A',
+                    $item['Type'] ?? 'N/A'
+                );
+            }
+        );
+    }
+    
+    /**
+     * List Currencies from SAP B1
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-masterdata currencies
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function currencies($args, $assoc_args) {
+        $this->query_sap_endpoint(
+            '/Currencies',
+            'Currencies',
+            array('Code', 'Name'),
+            function($item) {
+                return sprintf(
+                    "Code: %-5s | Name: %s",
+                    $item['Code'] ?? 'N/A',
+                    $item['Name'] ?? 'N/A'
+                );
+            }
+        );
+    }
+    
+    /**
+     * List Price Lists from SAP B1
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-masterdata pricelists
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function pricelists($args, $assoc_args) {
+        $this->query_sap_endpoint(
+            '/PriceLists',
+            'Price Lists',
+            array('PriceListNo', 'PriceListName', 'BasePriceList'),
+            function($item) {
+                return sprintf(
+                    "PriceListNo: %-4s | Name: %-30s | BasePriceList: %s",
+                    $item['PriceListNo'] ?? 'N/A',
+                    $item['PriceListName'] ?? 'N/A',
+                    $item['BasePriceList'] ?? 'N/A'
+                );
+            }
+        );
+    }
+    
+    /**
+     * List all master data types available
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-masterdata list
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function list($args, $assoc_args) {
+        WP_CLI::line('');
+        WP_CLI::line('Available SAP B1 Master Data Commands:');
+        WP_CLI::line('======================================');
+        WP_CLI::line('');
+        WP_CLI::line('  wp shift8-gravitysap-masterdata groups      - List Business Partner Groups (for GroupCode field)');
+        WP_CLI::line('  wp shift8-gravitysap-masterdata currencies  - List Currencies (for Currency field)');
+        WP_CLI::line('  wp shift8-gravitysap-masterdata pricelists  - List Price Lists (for PriceListNum field)');
+        WP_CLI::line('');
+        WP_CLI::line('These commands show you the actual SAP codes to use in your form field mappings.');
+        WP_CLI::line('');
+    }
+    
+    /**
+     * Generic method to query SAP endpoint and display results
+     *
+     * @param string $endpoint SAP API endpoint
+     * @param string $title Display title
+     * @param array $select_fields Fields to select
+     * @param callable $formatter Function to format each item
+     */
+    private function query_sap_endpoint($endpoint, $title, $select_fields, $formatter) {
+        WP_CLI::line('');
+        WP_CLI::line("Querying SAP B1 for {$title}...");
+        WP_CLI::line('');
+        
+        try {
+            // Get SAP settings
+            $sap_settings = get_option('shift8_gravitysap_settings', array());
+            
+            if (empty($sap_settings['sap_endpoint']) || empty($sap_settings['sap_username']) || empty($sap_settings['sap_password'])) {
+                WP_CLI::error('SAP connection settings not configured. Please configure in WordPress Admin > Settings > Shift8 GravitySAP.');
+                return;
+            }
+            
+            // Decrypt password
+            $sap_settings['sap_password'] = shift8_gravitysap_decrypt_password($sap_settings['sap_password']);
+            
+            // Create SAP service
+            require_once plugin_dir_path(__FILE__) . 'includes/class-shift8-gravitysap-sap-service.php';
+            $sap_service = new Shift8_GravitySAP_SAP_Service($sap_settings);
+            
+            // Authenticate
+            $reflection = new ReflectionClass($sap_service);
+            $auth_method = $reflection->getMethod('ensure_authenticated');
+            $auth_method->setAccessible(true);
+            
+            if (!$auth_method->invoke($sap_service)) {
+                WP_CLI::error('Failed to authenticate with SAP B1');
+                return;
+            }
+            
+            // Build query with $select
+            $select_param = implode(',', $select_fields);
+            $query_endpoint = "{$endpoint}?\$select={$select_param}";
+            
+            // Make request
+            $request_method = $reflection->getMethod('make_request');
+            $request_method->setAccessible(true);
+            
+            $response = $request_method->invoke($sap_service, 'GET', $query_endpoint);
+            
+            if (is_wp_error($response)) {
+                WP_CLI::error('SAP API Error: ' . $response->get_error_message());
+                return;
+            }
+            
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code !== 200) {
+                WP_CLI::error("SAP API returned HTTP {$code}");
+                return;
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            
+            if (!isset($data['value']) || empty($data['value'])) {
+                WP_CLI::warning("No {$title} found in SAP B1");
+                return;
+            }
+            
+            WP_CLI::success("Found " . count($data['value']) . " {$title}:");
+            WP_CLI::line('');
+            WP_CLI::line(str_repeat('-', 80));
+            
+            foreach ($data['value'] as $item) {
+                WP_CLI::line($formatter($item));
+            }
+            
+            WP_CLI::line(str_repeat('-', 80));
+            WP_CLI::line('');
+            WP_CLI::line("Use the 'Code' values (not the Names) when mapping form fields to SAP.");
+            WP_CLI::line('');
+            
+        } catch (Exception $e) {
+            WP_CLI::error('Error: ' . $e->getMessage());
+        }
+    }
+}
+
+WP_CLI::add_command('shift8-gravitysap-masterdata', 'Shift8_GravitySAP_MasterData_Command');
