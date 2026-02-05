@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.3.7
+ * Version: 1.3.8
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -27,7 +27,7 @@ if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.3.7');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.3.8');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -541,6 +541,15 @@ class Shift8_GravitySAP {
                         <?php $this->render_quotation_field_mapping_table($form, $settings); ?>
                     </td>
                 </tr>
+                
+                <?php if (!empty(rgar($settings, 'field_mapping'))): ?>
+                <tr>
+                    <th scope="row"><?php esc_html_e('Test Data Values', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <td>
+                        <?php $this->render_test_data_table($settings); ?>
+                    </td>
+                </tr>
+                <?php endif; ?>
             </table>
             
             <p class="submit">
@@ -1358,10 +1367,12 @@ class Shift8_GravitySAP {
             <input type="hidden" name="id" value="<?php echo esc_attr($form_id); ?>" />
             <input type="hidden" name="subview" value="sap_integration" />
             
+            <!-- Hidden inputs for test values - populated from main form by JavaScript -->
+            <div id="test-values-hidden-container"></div>
+            
             <h3><?php esc_html_e('Test SAP Integration', 'shift8-gravity-forms-sap-b1-integration'); ?></h3>
             <p><?php esc_html_e('Send test data to SAP Business One to validate your field mapping configuration.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
-            
-            <?php $this->render_test_data_table($settings); ?>
+            <p class="description"><?php esc_html_e('Uses the Test Data Values from the settings above. Save your settings first to update test values.', 'shift8-gravity-forms-sap-b1-integration'); ?></p>
             
             <p class="submit">
                 <input type="submit" name="test-sap-integration" value="<?php esc_attr_e('Test Integration', 'shift8-gravity-forms-sap-b1-integration'); ?>" class="button-secondary" />
@@ -1370,6 +1381,23 @@ class Shift8_GravitySAP {
                 </span>
             </p>
         </form>
+        
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            // Before submitting test form, copy test values from main form
+            $('#test-sap-form').on('submit', function() {
+                var container = $('#test-values-hidden-container');
+                container.empty();
+                
+                // Copy all test_values inputs from main form to hidden container
+                $('input[name^="test_values["]').each(function() {
+                    var name = $(this).attr('name');
+                    var value = $(this).val();
+                    container.append('<input type="hidden" name="' + name + '" value="' + value + '">');
+                });
+            });
+        });
+        </script>
         <?php endif; ?>
         <?php
     }
@@ -1382,6 +1410,7 @@ class Shift8_GravitySAP {
      */
     private function render_test_data_table($settings) {
         $field_mapping = rgar($settings, 'field_mapping', array());
+        $saved_test_values = rgar($settings, 'test_values', array());
         
         // Use the SAME field array as the mapping table
         $sap_fields = $this->get_sap_fields();
@@ -1403,46 +1432,39 @@ class Shift8_GravitySAP {
             'BPAddresses.ZipCode' => '12345',
             'BPAddresses.Country' => 'US',
         );
-        ?>
         
-        <table class="form-table">
-            <tr>
-                <th scope="row">
-                    <label><?php esc_html_e('Test Data', 'shift8-gravity-forms-sap-b1-integration'); ?></label>
-                </th>
-                <td>
-                    <table class="widefat field-mapping-table">
-                        <thead>
-                            <tr>
-                                <th><?php esc_html_e('SAP Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
-                                <th><?php esc_html_e('Test Value', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($sap_fields as $sap_field => $label): ?>
-                                <?php $mapped_field_id = rgar($field_mapping, $sap_field); ?>
-                                <?php if (!empty($mapped_field_id)): ?>
-                                    <tr>
-                                        <td><?php echo esc_html($label); ?></td>
-                                        <td>
-                                            <input type="text" 
-                                                   name="test_values[<?php echo esc_attr($sap_field); ?>]" 
-                                                   value="<?php echo esc_attr(rgar($default_test_values, $sap_field)); ?>" 
-                                                   class="regular-text" />
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <p class="description">
-                        <?php esc_html_e('These test values will be sent to SAP Business One using your current field mapping configuration.', 'shift8-gravity-forms-sap-b1-integration'); ?>
-                        <br><strong><?php esc_html_e('Note:', 'shift8-gravity-forms-sap-b1-integration'); ?></strong> 
-                        <?php esc_html_e('Use state codes (CA, NY) not full names, and 2-letter country codes (US, CA) to avoid SAP field length errors.', 'shift8-gravity-forms-sap-b1-integration'); ?>
-                    </p>
-                </td>
-            </tr>
+        // Merge saved values over defaults (saved values take priority)
+        $test_values = array_merge($default_test_values, $saved_test_values);
+        ?>
+        <table class="widefat field-mapping-table">
+            <thead>
+                <tr>
+                    <th><?php esc_html_e('SAP Field', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                    <th><?php esc_html_e('Test Value', 'shift8-gravity-forms-sap-b1-integration'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($sap_fields as $sap_field => $label): ?>
+                    <?php $mapped_field_id = rgar($field_mapping, $sap_field); ?>
+                    <?php if (!empty($mapped_field_id)): ?>
+                        <tr>
+                            <td><?php echo esc_html($label); ?></td>
+                            <td>
+                                <input type="text" 
+                                       name="test_values[<?php echo esc_attr($sap_field); ?>]" 
+                                       value="<?php echo esc_attr(rgar($test_values, $sap_field)); ?>" 
+                                       class="regular-text" />
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </tbody>
         </table>
+        <p class="description">
+            <?php esc_html_e('These test values will be sent to SAP Business One when you click "Test Integration" below.', 'shift8-gravity-forms-sap-b1-integration'); ?>
+            <br><strong><?php esc_html_e('Note:', 'shift8-gravity-forms-sap-b1-integration'); ?></strong> 
+            <?php esc_html_e('Use SAP codes (e.g., 102 for Group, USD for Currency), state codes (CA, NY), and 2-letter country codes (US, CA).', 'shift8-gravity-forms-sap-b1-integration'); ?>
+        </p>
         <?php
     }
 
@@ -1474,8 +1496,24 @@ class Shift8_GravitySAP {
             'card_code_prefix' => sanitize_text_field(rgpost('sap_card_code_prefix')),
             'create_quotation' => rgpost('sap_create_quotation') === '1' ? '1' : '0',
             'field_mapping' => array(),
-            'quotation_field_mapping' => array()
+            'quotation_field_mapping' => array(),
+            'test_values' => array()
         );
+        
+        // Save test values
+        $test_values = rgpost('test_values');
+        if (is_array($test_values)) {
+            $allowed_fields = $this->get_allowed_sap_fields();
+            foreach ($test_values as $field => $value) {
+                if (in_array($field, $allowed_fields, true)) {
+                    if ($field === 'EmailAddress' || strpos($field, 'E_Mail') !== false) {
+                        $settings['test_values'][$field] = sanitize_email($value);
+                    } else {
+                        $settings['test_values'][$field] = sanitize_text_field($value);
+                    }
+                }
+            }
+        }
         
         // Validate and sanitize Business Partner field mapping
         $field_mapping = rgpost('sap_field_mapping');

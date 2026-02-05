@@ -228,6 +228,63 @@ class MainPluginTest extends TestCase {
     }
 
     /**
+     * Test form settings saving with test values
+     */
+    public function test_save_form_settings_with_test_values() {
+        // Mock rgget and rgpost functions
+        Functions\when('rgget')->alias(function($name, $array = null) {
+            $data = array('subview' => 'sap_integration');
+            return isset($data[$name]) ? $data[$name] : null;
+        });
+        
+        Functions\when('rgpost')->alias(function($name, $array = null) {
+            $data = array(
+                'gforms_save_form' => 'test_nonce',
+                'sap_enabled' => '1',
+                'sap_feed_name' => 'Test Feed',
+                'sap_card_type' => 'cCustomer',
+                'sap_field_mapping' => array(
+                    'CardName' => '1',
+                    'EmailAddress' => '2',
+                    'GroupCode' => '3'
+                ),
+                'test_values' => array(
+                    'CardName' => 'Test Company Inc',
+                    'EmailAddress' => 'test@example.com',
+                    'GroupCode' => '102',
+                    'InvalidField' => 'should be filtered'
+                )
+            );
+            return isset($data[$name]) ? $data[$name] : null;
+        });
+        
+        // Mock wp_verify_nonce - use when() for flexible mocking
+        Functions\when('wp_verify_nonce')->justReturn(true);
+        
+        // Mock sanitize_text_field - called for feed_name and test_values
+        Functions\when('sanitize_text_field')->alias(function($str) { return $str; });
+        
+        // Mock sanitize_email
+        Functions\when('sanitize_email')->alias(function($email) { return $email; });
+        
+        // Mock esc_html__ for field labels
+        Functions\when('esc_html__')->alias(function($text) { return $text; });
+        
+        $form = array('id' => 123);
+        
+        $result = $this->plugin->save_form_settings($form);
+        
+        $this->assertArrayHasKey('sap_integration_settings', $result, 'Should add settings to form');
+        
+        $settings = $result['sap_integration_settings'];
+        $this->assertArrayHasKey('test_values', $settings, 'Should have test_values key');
+        $this->assertEquals('Test Company Inc', $settings['test_values']['CardName'], 'Should save CardName test value');
+        $this->assertEquals('test@example.com', $settings['test_values']['EmailAddress'], 'Should save EmailAddress test value');
+        $this->assertEquals('102', $settings['test_values']['GroupCode'], 'Should save GroupCode test value');
+        $this->assertArrayNotHasKey('InvalidField', $settings['test_values'], 'Should filter out invalid test value fields');
+    }
+
+    /**
      * Test form settings saving with invalid nonce
      */
     public function test_save_form_settings_invalid_nonce() {
