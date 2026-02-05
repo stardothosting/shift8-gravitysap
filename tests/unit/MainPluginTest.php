@@ -471,7 +471,7 @@ class MainPluginTest extends TestCase {
         // Test specific field limits
         $this->assertEquals(100, $limits['CardName']['max_length'], 'CardName should have 100 char limit');
         $this->assertEquals(3, $limits['BPAddresses.State']['max_length'], 'State should have 3 char limit');
-        $this->assertTrue($limits['CardName']['required'], 'CardName should be required');
+        $this->assertFalse($limits['CardName']['required'], 'CardName should not be required');
         $this->assertFalse($limits['BPAddresses.State']['required'], 'State should not be required');
         
         // Test validation messages for special fields

@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.3.5
+* Stable tag: 1.3.6
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -103,6 +103,9 @@ This is ideal for sample request forms, multi-product orders, and service select
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.3.6 =
+* **FIX**: Removed required validation from CardName field (all fields now optional)
 
 = 1.3.5 =
 * **FIX**: Removed URL format validation from Website field (accepts any text now)
