@@ -4,7 +4,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 **📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
 
-[![Version](https://img.shields.io/badge/version-1.4.6-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
+[![Version](https://img.shields.io/badge/version-1.4.8-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -266,6 +266,15 @@ wp shift8-gravitysap test_submission --form_id=<id>
 Tests real SAP B1 integration with data verification.
 
 ## Changelog
+
+### 1.4.8
+* **CHANGED**: Switched to synchronous processing (standard GF add-on approach)
+* **REMOVED**: Async loopback processing - was unreliable on many hosting environments
+* **IMPROVED**: Now works reliably on ALL hosting environments
+* **SIMPLIFIED**: Removed unnecessary complexity - follows GF best practices
+
+### 1.4.7
+* Synchronous Processing option (superseded by 1.4.8)
 
 ### 1.4.6
 * **CHANGED**: Debug logging now requires both `WP_DEBUG=true` AND plugin debug setting enabled

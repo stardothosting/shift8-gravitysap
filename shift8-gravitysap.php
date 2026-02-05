@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.4.6
+ * Version: 1.4.8
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.4.6');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.4.8');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -244,10 +244,6 @@ class Shift8_GravitySAP {
         add_action('wp_ajax_retry_sap_submission', array($this, 'ajax_retry_sap_submission'));
         add_action('wp_ajax_load_itemcodes', array($this, 'ajax_load_itemcodes'));
         add_action('admin_footer', array($this, 'add_retry_button_script'));
-        
-        // Async SAP processing endpoint (accessible without login for loopback requests)
-        add_action('wp_ajax_shift8_gravitysap_async_process', array($this, 'ajax_async_sap_process'));
-        add_action('wp_ajax_nopriv_shift8_gravitysap_async_process', array($this, 'ajax_async_sap_process'));
         
         
         // Form validation hook for SAP field limits
@@ -1698,157 +1694,19 @@ class Shift8_GravitySAP {
         
         shift8_gravitysap_debug_log('✅ SAP connection settings are complete');
         
-        // Set initial status to pending (will be processed async)
-        $this->update_entry_sap_status($entry['id'], 'pending', '', '');
-        shift8_gravitysap_debug_log('STEP 3: Entry status set to PENDING');
+        // Set status to processing
+        $this->update_entry_sap_status($entry['id'], 'processing', '', '');
+        shift8_gravitysap_debug_log('STEP 3: Entry status set to PROCESSING');
         
-        // Generate a secure token for async processing
-        $async_token = wp_generate_password(32, false);
-        gform_update_meta($entry['id'], 'sap_async_token', wp_hash($async_token));
-        shift8_gravitysap_debug_log('STEP 4: Generated async security token');
-        
-        // Fire non-blocking loopback request to process SAP integration asynchronously
-        shift8_gravitysap_debug_log('STEP 5: About to fire async loopback request', array(
-            'ajax_url' => admin_url('admin-ajax.php'),
-            'entry_id' => $entry['id'],
-            'form_id' => $form['id']
-        ));
-        
-        $this->fire_async_sap_process($entry['id'], $form['id'], $async_token);
-        
-        shift8_gravitysap_debug_log('🚀 STEP 6: Async loopback request FIRED - form submission handler complete', array(
-            'entry_id' => $entry['id'],
-            'form_id' => $form['id'],
-            'note' => 'If you do not see ASYNC SAP PROCESSING STARTED below, the loopback request failed'
-        ));
-    }
-    
-    /**
-     * Fire non-blocking loopback request for async SAP processing
-     *
-     * @since 1.4.0
-     * @param int    $entry_id    Entry ID
-     * @param int    $form_id     Form ID
-     * @param string $async_token Security token for verification
-     */
-    private function fire_async_sap_process($entry_id, $form_id, $async_token) {
-        $ajax_url = admin_url('admin-ajax.php');
-        
-        $args = array(
-            'timeout'   => 0.01, // Essentially non-blocking
-            'blocking'  => false, // Don't wait for response
-            'sslverify' => apply_filters('https_local_ssl_verify', false),
-            'body'      => array(
-                'action'      => 'shift8_gravitysap_async_process',
-                'entry_id'    => $entry_id,
-                'form_id'     => $form_id,
-                'async_token' => $async_token,
-            ),
-        );
-        
-        shift8_gravitysap_debug_log('🔄 Sending async loopback request', array(
-            'ajax_url' => $ajax_url,
-            'timeout' => $args['timeout'],
-            'blocking' => $args['blocking'],
-            'action' => $args['body']['action']
-        ));
-        
-        $response = wp_remote_post($ajax_url, $args);
-        
-        // Log if there's an error with the request itself
-        if (is_wp_error($response)) {
-            shift8_gravitysap_debug_log('⚠️ Loopback request returned WP_Error (this may be normal for non-blocking)', array(
-                'error_message' => $response->get_error_message(),
-                'error_code' => $response->get_error_code()
-            ));
-        } else {
-            shift8_gravitysap_debug_log('✅ Loopback request dispatched (non-blocking, so response may be incomplete)');
-        }
-    }
-    
-    /**
-     * AJAX handler for async SAP processing
-     *
-     * Processes the SAP integration asynchronously via loopback request.
-     * This is called by fire_async_sap_process() and runs in a separate PHP process.
-     *
-     * @since 1.4.0
-     */
-    public function ajax_async_sap_process() {
-        // Log immediately on handler entry - this confirms the loopback request reached the server
-        shift8_gravitysap_debug_log('========== ASYNC HANDLER ENTRY ==========', array(
-            'received_post_data' => array(
-                'has_entry_id' => isset($_POST['entry_id']) ? 'yes' : 'no',
-                'has_form_id' => isset($_POST['form_id']) ? 'yes' : 'no',
-                'has_async_token' => isset($_POST['async_token']) ? 'yes' : 'no',
-                'action' => isset($_POST['action']) ? sanitize_text_field(wp_unslash($_POST['action'])) : 'not set'
-            )
-        ));
-        
-        // Verify request parameters
-        $entry_id = isset($_POST['entry_id']) ? absint(wp_unslash($_POST['entry_id'])) : 0;
-        $form_id = isset($_POST['form_id']) ? absint(wp_unslash($_POST['form_id'])) : 0;
-        $async_token = isset($_POST['async_token']) ? sanitize_text_field(wp_unslash($_POST['async_token'])) : '';
-        
-        shift8_gravitysap_debug_log('Parsed request parameters', array(
-            'entry_id' => $entry_id,
-            'form_id' => $form_id,
-            'async_token_length' => strlen($async_token)
-        ));
-        
-        if (empty($entry_id) || empty($form_id) || empty($async_token)) {
-            shift8_gravitysap_debug_log('❌ Async SAP process: Missing required parameters - aborting', array(
-                'entry_id_empty' => empty($entry_id),
-                'form_id_empty' => empty($form_id),
-                'async_token_empty' => empty($async_token)
-            ));
-            wp_die();
-        }
-        
-        // Verify the async token
-        $stored_token_hash = gform_get_meta($entry_id, 'sap_async_token');
-        shift8_gravitysap_debug_log('Token verification', array(
-            'has_stored_token' => !empty($stored_token_hash) ? 'yes' : 'no'
-        ));
-        
-        if (empty($stored_token_hash) || !hash_equals($stored_token_hash, wp_hash($async_token))) {
-            shift8_gravitysap_debug_log('❌ Async SAP process: Invalid or missing token - aborting', array(
-                'entry_id' => $entry_id,
-                'stored_token_empty' => empty($stored_token_hash),
-                'hash_mismatch' => !empty($stored_token_hash) ? 'yes' : 'n/a'
-            ));
-            wp_die();
-        }
-        
-        // Clear the token (single use)
-        gform_delete_meta($entry_id, 'sap_async_token');
-        shift8_gravitysap_debug_log('✅ Token verified and cleared');
-        
-        shift8_gravitysap_debug_log('========== ASYNC SAP PROCESSING STARTED ==========', array(
-            'entry_id' => $entry_id,
-            'form_id' => $form_id
-        ));
-        
-        // Get entry and form data
-        $entry = GFAPI::get_entry($entry_id);
-        $form = GFAPI::get_form($form_id);
-        
-        if (is_wp_error($entry) || !$form) {
-            shift8_gravitysap_debug_log('❌ Async SAP process: Failed to load entry or form', array(
-                'entry_id' => $entry_id,
-                'form_id' => $form_id
-            ));
-            wp_die();
-        }
-        
-        // Process the SAP integration synchronously (we're now in async context)
+        // Process SAP integration synchronously (standard approach used by most GF add-ons)
+        shift8_gravitysap_debug_log('STEP 4: Starting SAP integration processing');
         $this->process_sap_integration_sync($entry, $form);
         
-        wp_die();
+        shift8_gravitysap_debug_log('✅ SAP integration processing complete');
     }
     
     /**
-     * Synchronous SAP integration processing
+     * SAP integration processing
      *
      * This is the actual SAP processing logic, called either by async handler
      * or directly for retry/testing purposes.

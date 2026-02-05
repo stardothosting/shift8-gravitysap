@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.4.6
+* Stable tag: 1.4.8
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -130,6 +130,15 @@ When a Business Partner match is found (or a new one is created), the plugin aut
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.4.8 =
+* **CHANGED**: Switched to synchronous processing (standard GF add-on approach)
+* **REMOVED**: Async loopback processing - was unreliable on many hosting environments
+* **IMPROVED**: Now works reliably on ALL hosting environments
+* **SIMPLIFIED**: Removed unnecessary complexity - follows GF best practices
+
+= 1.4.7 =
+* Synchronous Processing option (superseded by 1.4.8)
 
 = 1.4.6 =
 * **CHANGED**: Debug logging now requires both WP_DEBUG=true AND plugin debug setting enabled
