@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.4.4
+ * Version: 1.4.6
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -21,17 +21,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Immediate test to see if this file is being loaded
-if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-    shift8_gravitysap_debug_log('Plugin file is being loaded by WordPress');
-}
-
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.4.4');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.4.6');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_BASENAME', plugin_basename(__FILE__));
+define('SHIFT8_GRAVITYSAP_LOG_FILE', WP_CONTENT_DIR . '/uploads/shift8-gravitysap-debug.log');
 
 /**
  * Sanitize sensitive data for logging
@@ -66,21 +62,24 @@ function shift8_gravitysap_sanitize_log_data($data) {
 /**
  * Global debug logging function
  *
- * Uses WordPress default error_log() for security. Requires both WP_DEBUG
- * and user setting to be enabled. Automatically sanitizes sensitive data
- * to prevent credential exposure.
+ * Writes to plugin-specific log file in wp-content/uploads/.
+ * Requires BOTH WP_DEBUG to be true AND plugin debug setting enabled.
+ * Automatically sanitizes sensitive data to prevent credential exposure.
+ *
+ * Log file location: wp-content/uploads/shift8-gravitysap-debug.log
+ * Fallback: PHP error_log if file write fails
  *
  * @since 1.0.0
  * @param string $message The log message
  * @param mixed  $data    Optional data to include in the log
  */
 function shift8_gravitysap_debug_log($message, $data = null) {
-    // SECURITY: Require WP_DEBUG to be enabled
+    // Require WP_DEBUG to be enabled
     if (!defined('WP_DEBUG') || !WP_DEBUG) {
         return;
     }
     
-    // Check if user has enabled debug logging in plugin settings
+    // Also require plugin debug setting to be enabled
     $settings = get_option('shift8_gravitysap_settings', array());
     if (!isset($settings['sap_debug']) || $settings['sap_debug'] !== '1') {
         return;
@@ -91,15 +90,31 @@ function shift8_gravitysap_debug_log($message, $data = null) {
         $data = shift8_gravitysap_sanitize_log_data($data);
     }
 
-    // Format the log message
-    $log_message = '[Shift8 GravitySAP] ' . $message;
+    // Build log entry with timestamp
+    $timestamp = gmdate('Y-m-d H:i:s');
+    $log_message = "[{$timestamp}] [Shift8 GravitySAP] {$message}";
     if ($data !== null) {
-        $log_message .= ' - Data: ' . wp_json_encode($data);
+        $log_message .= ' - Data: ' . wp_json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
+    $log_message .= "\n";
 
-    // Use WordPress default error_log() - logs to debug.log if WP_DEBUG_LOG is enabled
-    if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-        error_log($log_message);
+    // Write to plugin log file in uploads directory
+    $log_file = defined('SHIFT8_GRAVITYSAP_LOG_FILE') ? SHIFT8_GRAVITYSAP_LOG_FILE : WP_CONTENT_DIR . '/uploads/shift8-gravitysap-debug.log';
+    
+    // Ensure uploads directory exists
+    $log_dir = dirname($log_file);
+    if (!file_exists($log_dir)) {
+        wp_mkdir_p($log_dir);
+    }
+    
+    // Write to log file
+    // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+    $write_result = file_put_contents($log_file, $log_message, FILE_APPEND | LOCK_EX);
+    
+    // Fallback to error_log if file write fails (e.g., permission issues)
+    if ($write_result === false) {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+        error_log('[Shift8 GravitySAP] (fallback) ' . $message . ($data !== null ? ' - Data: ' . wp_json_encode($data) : ''));
     }
 }
 
@@ -247,7 +262,24 @@ class Shift8_GravitySAP {
      * @since 1.0.0
      */
     public function init() {
-        shift8_gravitysap_debug_log('Plugin init() called');
+        // Get log file path for diagnostics
+        $log_file = defined('SHIFT8_GRAVITYSAP_LOG_FILE') ? SHIFT8_GRAVITYSAP_LOG_FILE : WP_CONTENT_DIR . '/uploads/shift8-gravitysap-debug.log';
+        $log_dir = dirname($log_file);
+        $dir_exists = file_exists($log_dir);
+        $dir_writable = $dir_exists && is_writable($log_dir);
+        $file_exists = file_exists($log_file);
+        $file_writable = $file_exists ? is_writable($log_file) : $dir_writable;
+        
+        shift8_gravitysap_debug_log('========== PLUGIN INIT ==========', array(
+            'plugin_version' => SHIFT8_GRAVITYSAP_VERSION,
+            'log_file' => $log_file,
+            'log_dir_exists' => $dir_exists ? 'yes' : 'no',
+            'log_dir_writable' => $dir_writable ? 'yes' : 'NO - CHECK PERMISSIONS',
+            'log_file_exists' => $file_exists ? 'yes' : 'no (will be created)',
+            'log_file_writable' => $file_writable ? 'yes' : 'NO - CHECK PERMISSIONS',
+            'is_admin' => is_admin() ? 'yes' : 'no',
+            'php_version' => PHP_VERSION
+        ));
         
         // WordPress automatically loads translations for plugins hosted on WordPress.org since version 4.6
         
@@ -1623,38 +1655,71 @@ class Shift8_GravitySAP {
      * @param array $form  Form data
      */
     public function process_form_submission($entry, $form) {
+        shift8_gravitysap_debug_log('========== FORM SUBMISSION RECEIVED ==========', array(
+            'entry_id' => isset($entry['id']) ? $entry['id'] : 'N/A',
+            'form_id' => isset($form['id']) ? $form['id'] : 'N/A',
+            'form_title' => isset($form['title']) ? $form['title'] : 'N/A'
+        ));
+        
         $settings = rgar($form, 'sap_integration_settings');
         
+        shift8_gravitysap_debug_log('STEP 1: Checking SAP integration settings', array(
+            'settings_enabled' => isset($settings['enabled']) ? $settings['enabled'] : 'not set',
+            'has_settings' => !empty($settings) ? 'yes' : 'no'
+        ));
+        
         if (empty($settings['enabled']) || $settings['enabled'] !== '1') {
+            shift8_gravitysap_debug_log('⏭️ SAP Integration NOT enabled for this form - skipping', array(
+                'form_id' => $form['id']
+            ));
             if (!empty($entry['id'])) {
                 $this->update_entry_sap_status($entry['id'], 'skipped', '', 'SAP Integration not enabled for this form');
             }
             return;
         }
         
+        shift8_gravitysap_debug_log('✅ SAP Integration IS enabled for this form');
+        
         // Get plugin settings (SAP connection details)
         $plugin_settings = get_option('shift8_gravitysap_settings', array());
+        
+        shift8_gravitysap_debug_log('STEP 2: Checking SAP connection settings', array(
+            'has_endpoint' => !empty($plugin_settings['sap_endpoint']) ? 'yes' : 'NO',
+            'has_username' => !empty($plugin_settings['sap_username']) ? 'yes' : 'NO',
+            'has_password' => !empty($plugin_settings['sap_password']) ? 'yes' : 'NO'
+        ));
         
         // Check if connection settings are configured
         if (empty($plugin_settings['sap_endpoint']) || empty($plugin_settings['sap_username']) || empty($plugin_settings['sap_password'])) {
             $this->update_entry_sap_status($entry['id'], 'failed', '', 'SAP connection settings incomplete');
-            shift8_gravitysap_debug_log('SAP connection settings INCOMPLETE');
+            shift8_gravitysap_debug_log('❌ SAP connection settings INCOMPLETE - cannot proceed');
             return;
         }
         
+        shift8_gravitysap_debug_log('✅ SAP connection settings are complete');
+        
         // Set initial status to pending (will be processed async)
         $this->update_entry_sap_status($entry['id'], 'pending', '', '');
+        shift8_gravitysap_debug_log('STEP 3: Entry status set to PENDING');
         
         // Generate a secure token for async processing
         $async_token = wp_generate_password(32, false);
         gform_update_meta($entry['id'], 'sap_async_token', wp_hash($async_token));
+        shift8_gravitysap_debug_log('STEP 4: Generated async security token');
         
         // Fire non-blocking loopback request to process SAP integration asynchronously
-        $this->fire_async_sap_process($entry['id'], $form['id'], $async_token);
-        
-        shift8_gravitysap_debug_log('🚀 SAP async processing initiated', array(
+        shift8_gravitysap_debug_log('STEP 5: About to fire async loopback request', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
             'entry_id' => $entry['id'],
             'form_id' => $form['id']
+        ));
+        
+        $this->fire_async_sap_process($entry['id'], $form['id'], $async_token);
+        
+        shift8_gravitysap_debug_log('🚀 STEP 6: Async loopback request FIRED - form submission handler complete', array(
+            'entry_id' => $entry['id'],
+            'form_id' => $form['id'],
+            'note' => 'If you do not see ASYNC SAP PROCESSING STARTED below, the loopback request failed'
         ));
     }
     
@@ -1681,7 +1746,24 @@ class Shift8_GravitySAP {
             ),
         );
         
-        wp_remote_post($ajax_url, $args);
+        shift8_gravitysap_debug_log('🔄 Sending async loopback request', array(
+            'ajax_url' => $ajax_url,
+            'timeout' => $args['timeout'],
+            'blocking' => $args['blocking'],
+            'action' => $args['body']['action']
+        ));
+        
+        $response = wp_remote_post($ajax_url, $args);
+        
+        // Log if there's an error with the request itself
+        if (is_wp_error($response)) {
+            shift8_gravitysap_debug_log('⚠️ Loopback request returned WP_Error (this may be normal for non-blocking)', array(
+                'error_message' => $response->get_error_message(),
+                'error_code' => $response->get_error_code()
+            ));
+        } else {
+            shift8_gravitysap_debug_log('✅ Loopback request dispatched (non-blocking, so response may be incomplete)');
+        }
     }
     
     /**
@@ -1693,29 +1775,56 @@ class Shift8_GravitySAP {
      * @since 1.4.0
      */
     public function ajax_async_sap_process() {
+        // Log immediately on handler entry - this confirms the loopback request reached the server
+        shift8_gravitysap_debug_log('========== ASYNC HANDLER ENTRY ==========', array(
+            'received_post_data' => array(
+                'has_entry_id' => isset($_POST['entry_id']) ? 'yes' : 'no',
+                'has_form_id' => isset($_POST['form_id']) ? 'yes' : 'no',
+                'has_async_token' => isset($_POST['async_token']) ? 'yes' : 'no',
+                'action' => isset($_POST['action']) ? sanitize_text_field(wp_unslash($_POST['action'])) : 'not set'
+            )
+        ));
+        
         // Verify request parameters
         $entry_id = isset($_POST['entry_id']) ? absint(wp_unslash($_POST['entry_id'])) : 0;
         $form_id = isset($_POST['form_id']) ? absint(wp_unslash($_POST['form_id'])) : 0;
         $async_token = isset($_POST['async_token']) ? sanitize_text_field(wp_unslash($_POST['async_token'])) : '';
         
+        shift8_gravitysap_debug_log('Parsed request parameters', array(
+            'entry_id' => $entry_id,
+            'form_id' => $form_id,
+            'async_token_length' => strlen($async_token)
+        ));
+        
         if (empty($entry_id) || empty($form_id) || empty($async_token)) {
-            shift8_gravitysap_debug_log('❌ Async SAP process: Missing required parameters');
+            shift8_gravitysap_debug_log('❌ Async SAP process: Missing required parameters - aborting', array(
+                'entry_id_empty' => empty($entry_id),
+                'form_id_empty' => empty($form_id),
+                'async_token_empty' => empty($async_token)
+            ));
             wp_die();
         }
         
         // Verify the async token
         $stored_token_hash = gform_get_meta($entry_id, 'sap_async_token');
+        shift8_gravitysap_debug_log('Token verification', array(
+            'has_stored_token' => !empty($stored_token_hash) ? 'yes' : 'no'
+        ));
+        
         if (empty($stored_token_hash) || !hash_equals($stored_token_hash, wp_hash($async_token))) {
-            shift8_gravitysap_debug_log('❌ Async SAP process: Invalid token', array(
-                'entry_id' => $entry_id
+            shift8_gravitysap_debug_log('❌ Async SAP process: Invalid or missing token - aborting', array(
+                'entry_id' => $entry_id,
+                'stored_token_empty' => empty($stored_token_hash),
+                'hash_mismatch' => !empty($stored_token_hash) ? 'yes' : 'n/a'
             ));
             wp_die();
         }
         
         // Clear the token (single use)
         gform_delete_meta($entry_id, 'sap_async_token');
+        shift8_gravitysap_debug_log('✅ Token verified and cleared');
         
-        shift8_gravitysap_debug_log('=== ASYNC SAP PROCESSING STARTED ===', array(
+        shift8_gravitysap_debug_log('========== ASYNC SAP PROCESSING STARTED ==========', array(
             'entry_id' => $entry_id,
             'form_id' => $form_id
         ));

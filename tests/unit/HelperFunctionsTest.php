@@ -109,11 +109,16 @@ class HelperFunctionsTest extends TestCase {
                 'baseurl' => 'http://example.com/uploads'
             ));
         
+        // Mock wp_mkdir_p for directory creation in debug log
+        Functions\when('wp_mkdir_p')
+            ->justReturn(true);
+        
         // Mock filesystem operations with simpler approach
         Functions\when('is_dir')->justReturn(true);
         Functions\when('WP_Filesystem')->justReturn(true);
         
         // Test logging - will use the global mock from bootstrap
+        // Note: file_put_contents will fail but error_log fallback should work
         shift8_gravitysap_debug_log('Test debug message', array('key' => 'value'));
         
         $this->assertTrue(true, 'Debug logging with enabled debug completed without errors');

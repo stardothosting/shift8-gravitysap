@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.4.4
+* Stable tag: 1.4.6
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -130,6 +130,17 @@ When a Business Partner match is found (or a new one is created), the plugin aut
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.4.6 =
+* **CHANGED**: Debug logging now requires both WP_DEBUG=true AND plugin debug setting enabled
+
+= 1.4.5 =
+* **NEW**: Robust debug logging system - requires both WP_DEBUG and plugin debug setting
+* **NEW**: Dedicated log file at `wp-content/uploads/shift8-gravitysap-debug.log`
+* **NEW**: Comprehensive logging throughout form submission and async processing
+* **IMPROVED**: Logs include step-by-step visibility for troubleshooting
+* **IMPROVED**: Fallback to PHP error_log if file write fails
+* **IMPROVED**: Plugin init logs diagnostic info (file paths, permissions, versions)
 
 = 1.4.4 =
 * **NEW**: Duplicate contact detection - checks if contact already exists before adding

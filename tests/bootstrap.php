@@ -30,6 +30,10 @@ if (!defined('FS_CHMOD_FILE')) {
     define('FS_CHMOD_FILE', 0644);
 }
 
+if (!defined('WP_CONTENT_DIR')) {
+    define('WP_CONTENT_DIR', '/tmp/wordpress/wp-content');
+}
+
 // Global test options storage
 global $_test_options;
 $_test_options = array();
