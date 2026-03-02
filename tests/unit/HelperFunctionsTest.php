@@ -86,6 +86,12 @@ class HelperFunctionsTest extends TestCase {
      * Test debug logging with enabled debug
      */
     public function test_debug_logging_enabled() {
+        // Ensure the log directory exists for the test
+        $log_dir = dirname(SHIFT8_GRAVITYSAP_LOG_FILE);
+        if (!is_dir($log_dir)) {
+            mkdir($log_dir, 0755, true);
+        }
+        
         // Mock get_option to return debug enabled
         Functions\when('get_option')
             ->justReturn(array('sap_debug' => '1'));
@@ -117,8 +123,6 @@ class HelperFunctionsTest extends TestCase {
         Functions\when('is_dir')->justReturn(true);
         Functions\when('WP_Filesystem')->justReturn(true);
         
-        // Test logging - will use the global mock from bootstrap
-        // Note: file_put_contents will fail but error_log fallback should work
         shift8_gravitysap_debug_log('Test debug message', array('key' => 'value'));
         
         $this->assertTrue(true, 'Debug logging with enabled debug completed without errors');
@@ -213,6 +217,12 @@ class HelperFunctionsTest extends TestCase {
         // Mock wp_mkdir_p for directory creation
         Functions\when('wp_mkdir_p')
             ->justReturn(true);
+        
+        // Ensure the log directory exists for the test
+        $log_dir = dirname(SHIFT8_GRAVITYSAP_LOG_FILE);
+        if (!is_dir($log_dir)) {
+            mkdir($log_dir, 0755, true);
+        }
         
         // Test the special debug check message
         shift8_gravitysap_debug_log('Debug setting check');

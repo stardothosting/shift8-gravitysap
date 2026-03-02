@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.4.8
+ * Version: 1.4.9
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.4.8');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.4.9');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1881,6 +1881,13 @@ class Shift8_GravitySAP {
                 }
                 
                 $this->update_entry_sap_status($entry['id'], 'success', $card_code, '');
+                gform_update_meta($entry['id'], 'sap_b1_bp_matched', '1');
+                if (!empty($contact_person_name)) {
+                    gform_update_meta($entry['id'], 'sap_b1_contact_name', $contact_person_name);
+                }
+                if (!empty($contact_person_code)) {
+                    gform_update_meta($entry['id'], 'sap_b1_contact_internal_code', (string) $contact_person_code);
+                }
                 
                 GFFormsModel::add_note(
                     $entry['id'], 
@@ -1930,6 +1937,13 @@ class Shift8_GravitySAP {
                 }
                 
                 $this->update_entry_sap_status($entry['id'], 'success', $card_code, '');
+                gform_update_meta($entry['id'], 'sap_b1_bp_matched', '0');
+                if (!empty($contact_person_name)) {
+                    gform_update_meta($entry['id'], 'sap_b1_contact_name', $contact_person_name);
+                }
+                if (!empty($contact_person_code)) {
+                    gform_update_meta($entry['id'], 'sap_b1_contact_internal_code', (string) $contact_person_code);
+                }
                 
                 GFFormsModel::add_note(
                     $entry['id'], 
@@ -2608,6 +2622,31 @@ class Shift8_GravitySAP {
             if ($error) {
                 $entry['sap_b1_error'] = $error;
             }
+            
+            $quotation_docentry = gform_get_meta($entry['id'], 'sap_b1_quotation_docentry');
+            if ($quotation_docentry) {
+                $entry['sap_b1_quotation_docentry'] = $quotation_docentry;
+            }
+            
+            $quotation_docnum = gform_get_meta($entry['id'], 'sap_b1_quotation_docnum');
+            if ($quotation_docnum) {
+                $entry['sap_b1_quotation_docnum'] = $quotation_docnum;
+            }
+            
+            $bp_matched = gform_get_meta($entry['id'], 'sap_b1_bp_matched');
+            if ($bp_matched !== false && $bp_matched !== '') {
+                $entry['sap_b1_bp_matched'] = $bp_matched;
+            }
+            
+            $contact_name = gform_get_meta($entry['id'], 'sap_b1_contact_name');
+            if ($contact_name) {
+                $entry['sap_b1_contact_name'] = $contact_name;
+            }
+            
+            $contact_code = gform_get_meta($entry['id'], 'sap_b1_contact_internal_code');
+            if ($contact_code) {
+                $entry['sap_b1_contact_internal_code'] = $contact_code;
+            }
         }
         
         return $entries;
@@ -2803,7 +2842,22 @@ class Shift8_GravitySAP {
         $entry_id = rgar($entry, 'id');
         
         if (!empty($sap_cardcode)) {
-            return '<span style="color: green; font-weight: bold;">✅ SUCCESS</span><br><small>CardCode: ' . esc_html($sap_cardcode) . '</small>';
+            $bp_matched = rgar($entry, 'sap_b1_bp_matched', '');
+            $match_label = ($bp_matched === '1') ? 'Matched' : 'New';
+            $quotation_docnum = rgar($entry, 'sap_b1_quotation_docnum', '');
+            $contact_name = rgar($entry, 'sap_b1_contact_name', '');
+            
+            $html = '<span style="color: green; font-weight: bold;">✅ SUCCESS</span>';
+            $html .= '<br><small>BP: ' . esc_html($sap_cardcode) . ' (' . esc_html($match_label) . ')</small>';
+            
+            if (!empty($quotation_docnum)) {
+                $html .= '<br><small>Quote #' . esc_html($quotation_docnum) . '</small>';
+            }
+            if (!empty($contact_name)) {
+                $html .= '<br><small>Contact: ' . esc_html($contact_name) . '</small>';
+            }
+            
+            return $html;
         } elseif (!empty($sap_error)) {
             $retry_button = '<br><button type="button" class="button button-small retry-sap-submission" data-entry-id="' . esc_attr($entry_id) . '" style="margin-top: 5px;">🔄 Retry</button>';
             return '<span style="color: red; font-weight: bold;">❌ FAILED</span><br><small>' . esc_html($sap_error) . '</small>' . $retry_button;

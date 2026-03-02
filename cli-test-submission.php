@@ -1596,3 +1596,509 @@ class Shift8_GravitySAP_BP_Lookup_Command {
 }
 
 WP_CLI::add_command('shift8-gravitysap-bp-lookup', 'Shift8_GravitySAP_BP_Lookup_Command');
+
+/**
+ * Streamlined SAP B1 query commands for manual verification and debugging.
+ *
+ * Provides direct querying of SAP B1 records by their unique identifiers.
+ * Designed for rapid manual testing: submit a form, grab the CardCode from
+ * the GF entry meta, then verify the full record in SAP B1.
+ *
+ * @since 1.4.9
+ */
+class Shift8_GravitySAP_SAP_Query_Command {
+
+    /**
+     * Look up a Business Partner in SAP B1 by CardCode.
+     *
+     * ## OPTIONS
+     *
+     * <card_code>
+     * : The SAP B1 CardCode (e.g., E00115)
+     *
+     * [--contacts]
+     * : Also display Contact Persons
+     *
+     * [--quotations]
+     * : Also display linked Sales Quotations
+     *
+     * [--json]
+     * : Output raw JSON response
+     *
+     * ## EXAMPLES
+     *
+     *     wp sap-query bp E00115
+     *     wp sap-query bp E00115 --contacts --quotations
+     *     wp sap-query bp E00115 --json
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function bp($args, $assoc_args) {
+        $card_code = isset($args[0]) ? sanitize_text_field($args[0]) : '';
+        $show_contacts = isset($assoc_args['contacts']);
+        $show_quotations = isset($assoc_args['quotations']);
+        $output_json = isset($assoc_args['json']);
+
+        if (empty($card_code)) {
+            WP_CLI::error('Please provide a CardCode: wp sap-query bp E00115');
+        }
+
+        $sap_service = $this->get_sap_service();
+        if (!$sap_service) {
+            return;
+        }
+
+        $reflection = new ReflectionClass($sap_service);
+        $method = $reflection->getMethod('make_request');
+        $method->setAccessible(true);
+
+        WP_CLI::line('');
+        WP_CLI::line('Querying SAP B1 for Business Partner: ' . $card_code);
+        WP_CLI::line(str_repeat('-', 60));
+
+        $response = $method->invoke($sap_service, 'GET', "/BusinessPartners('" . $card_code . "')");
+        $data = $this->parse_response($response);
+
+        if (!$data) {
+            WP_CLI::error("Business Partner '{$card_code}' not found in SAP B1");
+            return;
+        }
+
+        if ($output_json) {
+            WP_CLI::line(wp_json_encode($data, JSON_PRETTY_PRINT));
+            return;
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line('  CardCode:     ' . ($data['CardCode'] ?? 'N/A'));
+        WP_CLI::line('  CardName:     ' . ($data['CardName'] ?? 'N/A'));
+        WP_CLI::line('  CardType:     ' . ($data['CardType'] ?? 'N/A'));
+        WP_CLI::line('  Series:       ' . ($data['Series'] ?? 'N/A'));
+        WP_CLI::line('  GroupCode:    ' . ($data['GroupCode'] ?? 'N/A'));
+        WP_CLI::line('  Email:        ' . ($data['EmailAddress'] ?? 'N/A'));
+        WP_CLI::line('  Phone:        ' . ($data['Phone1'] ?? 'N/A'));
+        WP_CLI::line('  Website:      ' . ($data['Website'] ?? 'N/A'));
+        WP_CLI::line('  Currency:     ' . ($data['Currency'] ?? 'N/A'));
+        WP_CLI::line('  PriceList:    ' . ($data['PriceListNum'] ?? 'N/A'));
+        WP_CLI::line('  FederalTaxID: ' . ($data['FederalTaxID'] ?? 'N/A'));
+        WP_CLI::line('  CreateDate:   ' . ($data['CreateDate'] ?? 'N/A'));
+        WP_CLI::line('  Valid:        ' . ($data['Valid'] ?? 'N/A'));
+
+        if (!empty($data['BPAddresses']) && is_array($data['BPAddresses'])) {
+            WP_CLI::line('');
+            WP_CLI::line('  Addresses:');
+            foreach ($data['BPAddresses'] as $addr) {
+                $type = ($addr['AddressType'] ?? '') === 'bo_BillTo' ? 'Bill-To' : 'Ship-To';
+                WP_CLI::line("    [{$type}] {$addr['Street']}, {$addr['City']}, {$addr['State']} {$addr['ZipCode']}, {$addr['Country']}");
+            }
+        }
+
+        if ($show_contacts && !empty($data['ContactEmployees']) && is_array($data['ContactEmployees'])) {
+            WP_CLI::line('');
+            WP_CLI::line('  Contact Persons:');
+            foreach ($data['ContactEmployees'] as $contact) {
+                $code = $contact['InternalCode'] ?? 'N/A';
+                $name = $contact['Name'] ?? 'N/A';
+                $email = $contact['E_Mail'] ?? '';
+                $phone = $contact['Phone1'] ?? '';
+                WP_CLI::line("    [{$code}] {$name} | {$email} | {$phone}");
+            }
+        }
+
+        if ($show_quotations) {
+            WP_CLI::line('');
+            WP_CLI::line('  Sales Quotations:');
+            $q_response = $method->invoke(
+                $sap_service,
+                'GET',
+                "/Quotations?\$filter=CardCode eq '{$card_code}'&\$select=DocEntry,DocNum,DocDate,DocTotal,DocCurrency,DocumentStatus&\$orderby=DocEntry desc&\$top=20"
+            );
+            $q_data = $this->parse_response($q_response);
+
+            if ($q_data && !empty($q_data['value'])) {
+                foreach ($q_data['value'] as $q) {
+                    $status = ($q['DocumentStatus'] ?? '') === 'bost_Open' ? 'Open' : ($q['DocumentStatus'] ?? 'N/A');
+                    WP_CLI::line(sprintf(
+                        '    DocNum: %-8s | DocEntry: %-8s | Date: %s | Total: %s %s | Status: %s',
+                        $q['DocNum'] ?? 'N/A',
+                        $q['DocEntry'] ?? 'N/A',
+                        $q['DocDate'] ?? 'N/A',
+                        $q['DocTotal'] ?? '0',
+                        $q['DocCurrency'] ?? '',
+                        $status
+                    ));
+                }
+            } else {
+                WP_CLI::line('    (none)');
+            }
+        }
+
+        WP_CLI::line('');
+    }
+
+    /**
+     * Look up a Sales Quotation in SAP B1 by DocEntry.
+     *
+     * ## OPTIONS
+     *
+     * <doc_entry>
+     * : The SAP B1 DocEntry (numeric ID)
+     *
+     * [--json]
+     * : Output raw JSON response
+     *
+     * ## EXAMPLES
+     *
+     *     wp sap-query quotation 285
+     *     wp sap-query quotation 285 --json
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function quotation($args, $assoc_args) {
+        $doc_entry = isset($args[0]) ? intval($args[0]) : 0;
+        $output_json = isset($assoc_args['json']);
+
+        if (empty($doc_entry)) {
+            WP_CLI::error('Please provide a DocEntry: wp sap-query quotation 285');
+        }
+
+        $sap_service = $this->get_sap_service();
+        if (!$sap_service) {
+            return;
+        }
+
+        $reflection = new ReflectionClass($sap_service);
+        $method = $reflection->getMethod('make_request');
+        $method->setAccessible(true);
+
+        WP_CLI::line('');
+        WP_CLI::line('Querying SAP B1 for Sales Quotation DocEntry: ' . $doc_entry);
+        WP_CLI::line(str_repeat('-', 60));
+
+        $response = $method->invoke($sap_service, 'GET', '/Quotations(' . $doc_entry . ')');
+        $data = $this->parse_response($response);
+
+        if (!$data) {
+            WP_CLI::error("Sales Quotation DocEntry '{$doc_entry}' not found in SAP B1");
+            return;
+        }
+
+        if ($output_json) {
+            WP_CLI::line(wp_json_encode($data, JSON_PRETTY_PRINT));
+            return;
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line('  DocEntry:           ' . ($data['DocEntry'] ?? 'N/A'));
+        WP_CLI::line('  DocNum:             ' . ($data['DocNum'] ?? 'N/A'));
+        WP_CLI::line('  CardCode:           ' . ($data['CardCode'] ?? 'N/A'));
+        WP_CLI::line('  CardName:           ' . ($data['CardName'] ?? 'N/A'));
+        WP_CLI::line('  ContactPersonCode:  ' . ($data['ContactPersonCode'] ?? 'N/A'));
+        WP_CLI::line('  DocDate:            ' . ($data['DocDate'] ?? 'N/A'));
+        WP_CLI::line('  DocDueDate:         ' . ($data['DocDueDate'] ?? 'N/A'));
+        WP_CLI::line('  DocTotal:           ' . ($data['DocTotal'] ?? '0') . ' ' . ($data['DocCurrency'] ?? ''));
+        WP_CLI::line('  DocumentStatus:     ' . ($data['DocumentStatus'] ?? 'N/A'));
+        WP_CLI::line('  Comments:           ' . ($data['Comments'] ?? 'N/A'));
+
+        if (!empty($data['DocumentLines']) && is_array($data['DocumentLines'])) {
+            WP_CLI::line('');
+            WP_CLI::line('  Line Items (' . count($data['DocumentLines']) . '):');
+            foreach ($data['DocumentLines'] as $i => $line) {
+                $num = $i + 1;
+                WP_CLI::line("    Line {$num}:");
+                WP_CLI::line('      ItemCode:    ' . ($line['ItemCode'] ?? 'N/A'));
+                WP_CLI::line('      Description: ' . ($line['ItemDescription'] ?? 'N/A'));
+                WP_CLI::line('      Quantity:    ' . ($line['Quantity'] ?? 'N/A'));
+                WP_CLI::line('      UnitPrice:   ' . ($line['UnitPrice'] ?? 'N/A'));
+                WP_CLI::line('      LineTotal:   ' . ($line['LineTotal'] ?? 'N/A'));
+                if (!empty($line['WarehouseCode'])) {
+                    WP_CLI::line('      Warehouse:   ' . $line['WarehouseCode']);
+                }
+            }
+        }
+
+        WP_CLI::line('');
+    }
+
+    /**
+     * Look up a Gravity Forms entry and its linked SAP B1 records.
+     *
+     * Reads the SAP identifiers stored in entry meta and queries SAP B1
+     * to verify the records exist and display their details.
+     *
+     * ## OPTIONS
+     *
+     * [<entry_id>]
+     * : The Gravity Forms entry ID. Omit and use --form_id to get the latest entry.
+     *
+     * [--form_id=<form_id>]
+     * : Get the latest entry for this form ID (instead of specifying entry_id)
+     *
+     * [--verify]
+     * : Also query SAP B1 to verify the linked records exist
+     *
+     * [--json]
+     * : Output raw JSON of all SAP meta
+     *
+     * ## EXAMPLES
+     *
+     *     wp sap-query entry 132
+     *     wp sap-query entry 132 --verify
+     *     wp sap-query entry --form_id=3 --verify
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function entry($args, $assoc_args) {
+        $entry_id = isset($args[0]) ? intval($args[0]) : 0;
+        $form_id = isset($assoc_args['form_id']) ? absint($assoc_args['form_id']) : 0;
+        $verify = isset($assoc_args['verify']);
+        $output_json = isset($assoc_args['json']);
+
+        if (empty($entry_id) && !empty($form_id)) {
+            $search = GFAPI::get_entries($form_id, array('status' => 'active'), array('key' => 'date_created', 'direction' => 'DESC'), array('offset' => 0, 'page_size' => 1));
+            if (empty($search)) {
+                WP_CLI::error("No entries found for form #{$form_id}");
+                return;
+            }
+            $entry_id = intval($search[0]['id']);
+            WP_CLI::line("Using latest entry #{$entry_id} from form #{$form_id}");
+        }
+
+        if (empty($entry_id)) {
+            WP_CLI::error('Provide an entry ID or --form_id: wp sap-query entry 132 OR wp sap-query entry --form_id=3');
+        }
+
+        $entry = GFAPI::get_entry($entry_id);
+        if (is_wp_error($entry)) {
+            WP_CLI::error("Entry #{$entry_id} not found");
+            return;
+        }
+
+        $meta_keys = array(
+            'sap_b1_status',
+            'sap_b1_cardcode',
+            'sap_b1_bp_matched',
+            'sap_b1_contact_internal_code',
+            'sap_b1_contact_name',
+            'sap_b1_quotation_docentry',
+            'sap_b1_quotation_docnum',
+            'sap_b1_error',
+        );
+
+        $meta = array();
+        foreach ($meta_keys as $key) {
+            $val = gform_get_meta($entry_id, $key);
+            $meta[$key] = $val ? $val : '';
+        }
+
+        if ($output_json) {
+            WP_CLI::line(wp_json_encode($meta, JSON_PRETTY_PRINT));
+            return;
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line('Gravity Forms Entry #' . $entry_id . ' - SAP B1 Integration Data');
+        WP_CLI::line(str_repeat('-', 60));
+        WP_CLI::line('');
+        WP_CLI::line('  Form ID:              ' . ($entry['form_id'] ?? 'N/A'));
+        WP_CLI::line('  Date Created:         ' . ($entry['date_created'] ?? 'N/A'));
+        WP_CLI::line('');
+        WP_CLI::line('  SAP Status:           ' . ($meta['sap_b1_status'] ?: '(not set)'));
+        WP_CLI::line('  CardCode:             ' . ($meta['sap_b1_cardcode'] ?: '(not set)'));
+        WP_CLI::line('  BP Matched (existing):' . ($meta['sap_b1_bp_matched'] ? 'Yes' : 'No (new BP created)'));
+        WP_CLI::line('  Contact Name:         ' . ($meta['sap_b1_contact_name'] ?: '(not set)'));
+        WP_CLI::line('  Contact InternalCode: ' . ($meta['sap_b1_contact_internal_code'] ?: '(not set)'));
+        WP_CLI::line('  Quotation DocEntry:   ' . ($meta['sap_b1_quotation_docentry'] ?: '(not set)'));
+        WP_CLI::line('  Quotation DocNum:     ' . ($meta['sap_b1_quotation_docnum'] ?: '(not set)'));
+
+        if (!empty($meta['sap_b1_error'])) {
+            WP_CLI::line('  Error:                ' . $meta['sap_b1_error']);
+        }
+
+        if ($verify && !empty($meta['sap_b1_cardcode'])) {
+            WP_CLI::line('');
+            WP_CLI::line('Verifying against SAP B1...');
+            WP_CLI::line(str_repeat('-', 60));
+
+            $sap_service = $this->get_sap_service();
+            if ($sap_service) {
+                $reflection = new ReflectionClass($sap_service);
+                $req = $reflection->getMethod('make_request');
+                $req->setAccessible(true);
+
+                $bp_response = $req->invoke($sap_service, 'GET', "/BusinessPartners('" . $meta['sap_b1_cardcode'] . "')");
+                $bp_data = $this->parse_response($bp_response);
+
+                if ($bp_data) {
+                    WP_CLI::success('Business Partner ' . $meta['sap_b1_cardcode'] . ' exists in SAP B1');
+                    WP_CLI::line('    CardName: ' . ($bp_data['CardName'] ?? 'N/A'));
+                    WP_CLI::line('    Email:    ' . ($bp_data['EmailAddress'] ?? 'N/A'));
+
+                    if (!empty($meta['sap_b1_contact_internal_code']) && !empty($bp_data['ContactEmployees'])) {
+                        $found = false;
+                        foreach ($bp_data['ContactEmployees'] as $c) {
+                            if (isset($c['InternalCode']) && (string) $c['InternalCode'] === (string) $meta['sap_b1_contact_internal_code']) {
+                                WP_CLI::success('Contact Person InternalCode ' . $meta['sap_b1_contact_internal_code'] . ' verified');
+                                WP_CLI::line('      Name:  ' . ($c['Name'] ?? 'N/A'));
+                                WP_CLI::line('      Email: ' . ($c['E_Mail'] ?? 'N/A'));
+                                $found = true;
+                                break;
+                            }
+                        }
+                        if (!$found) {
+                            WP_CLI::warning('Contact InternalCode ' . $meta['sap_b1_contact_internal_code'] . ' not found on BP');
+                        }
+                    }
+                } else {
+                    WP_CLI::warning('Business Partner ' . $meta['sap_b1_cardcode'] . ' NOT found in SAP B1');
+                }
+
+                if (!empty($meta['sap_b1_quotation_docentry'])) {
+                    $q_response = $req->invoke($sap_service, 'GET', '/Quotations(' . intval($meta['sap_b1_quotation_docentry']) . ')');
+                    $q_data = $this->parse_response($q_response);
+
+                    if ($q_data) {
+                        WP_CLI::success('Quotation DocEntry ' . $meta['sap_b1_quotation_docentry'] . ' exists in SAP B1');
+                        WP_CLI::line('    DocNum:   ' . ($q_data['DocNum'] ?? 'N/A'));
+                        WP_CLI::line('    CardCode: ' . ($q_data['CardCode'] ?? 'N/A'));
+                        WP_CLI::line('    DocTotal: ' . ($q_data['DocTotal'] ?? '0') . ' ' . ($q_data['DocCurrency'] ?? ''));
+                        WP_CLI::line('    Status:   ' . ($q_data['DocumentStatus'] ?? 'N/A'));
+                    } else {
+                        WP_CLI::warning('Quotation DocEntry ' . $meta['sap_b1_quotation_docentry'] . ' NOT found in SAP B1');
+                    }
+                }
+            }
+        }
+
+        WP_CLI::line('');
+    }
+
+    /**
+     * Search for Business Partners by name (case-insensitive contains).
+     *
+     * ## OPTIONS
+     *
+     * <name>
+     * : Partial name to search for
+     *
+     * [--limit=<num>]
+     * : Maximum results to return (default: 20)
+     *
+     * ## EXAMPLES
+     *
+     *     wp sap-query search "Emilie Cohen"
+     *     wp sap-query search "Marino" --limit=5
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function search($args, $assoc_args) {
+        $name = isset($args[0]) ? sanitize_text_field($args[0]) : '';
+        $limit = isset($assoc_args['limit']) ? absint($assoc_args['limit']) : 20;
+
+        if (empty($name)) {
+            WP_CLI::error('Please provide a search term: wp sap-query search "Company Name"');
+        }
+
+        $sap_service = $this->get_sap_service();
+        if (!$sap_service) {
+            return;
+        }
+
+        $reflection = new ReflectionClass($sap_service);
+        $method = $reflection->getMethod('make_request');
+        $method->setAccessible(true);
+
+        $escaped_name = str_replace("'", "''", $name);
+        $endpoint = "/BusinessPartners?\$filter=contains(CardName, '{$escaped_name}')&\$select=CardCode,CardName,CardType,EmailAddress,Phone1,Valid&\$top={$limit}&\$orderby=CardCode";
+
+        WP_CLI::line('');
+        WP_CLI::line('Searching SAP B1 for Business Partners matching: "' . $name . '"');
+        WP_CLI::line(str_repeat('-', 60));
+
+        $response = $method->invoke($sap_service, 'GET', $endpoint);
+        $data = $this->parse_response($response);
+
+        if (!$data || empty($data['value'])) {
+            WP_CLI::warning('No Business Partners found matching "' . $name . '"');
+            WP_CLI::line('');
+            return;
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line(sprintf('  %-12s %-35s %-6s %-30s %s', 'CardCode', 'CardName', 'Type', 'Email', 'Valid'));
+        WP_CLI::line('  ' . str_repeat('-', 100));
+
+        foreach ($data['value'] as $bp) {
+            WP_CLI::line(sprintf(
+                '  %-12s %-35s %-6s %-30s %s',
+                $bp['CardCode'] ?? '',
+                mb_substr($bp['CardName'] ?? '', 0, 35),
+                $bp['CardType'] ?? '',
+                mb_substr($bp['EmailAddress'] ?? '', 0, 30),
+                $bp['Valid'] ?? ''
+            ));
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line('Found ' . count($data['value']) . ' result(s). Use `wp sap-query bp <CardCode>` for full details.');
+        WP_CLI::line('');
+    }
+
+    /**
+     * Initialize and return an authenticated SAP service instance.
+     *
+     * @return Shift8_GravitySAP_SAP_Service|null
+     */
+    private function get_sap_service() {
+        $sap_settings = get_option('shift8_gravitysap_settings', array());
+
+        if (empty($sap_settings['sap_endpoint']) || empty($sap_settings['sap_username']) || empty($sap_settings['sap_password'])) {
+            WP_CLI::error('SAP connection settings not configured.');
+            return null;
+        }
+
+        $sap_settings['sap_password'] = shift8_gravitysap_decrypt_password($sap_settings['sap_password']);
+
+        require_once plugin_dir_path(__FILE__) . 'includes/class-shift8-gravitysap-sap-service.php';
+        $sap_service = new Shift8_GravitySAP_SAP_Service($sap_settings);
+
+        $reflection = new ReflectionClass($sap_service);
+        $auth = $reflection->getMethod('ensure_authenticated');
+        $auth->setAccessible(true);
+
+        if (!$auth->invoke($sap_service)) {
+            WP_CLI::error('Failed to authenticate with SAP B1');
+            return null;
+        }
+
+        return $sap_service;
+    }
+
+    /**
+     * Parse a SAP Service Layer response into an array.
+     *
+     * @param mixed $response wp_remote_post/get response
+     * @return array|null Parsed data or null on failure
+     */
+    private function parse_response($response) {
+        if (is_wp_error($response)) {
+            return null;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            return null;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        return $data ?: null;
+    }
+}
+
+WP_CLI::add_command('sap-query', 'Shift8_GravitySAP_SAP_Query_Command');

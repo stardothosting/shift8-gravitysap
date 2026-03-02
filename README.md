@@ -4,7 +4,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 **📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
 
-[![Version](https://img.shields.io/badge/version-1.4.8-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
+[![Version](https://img.shields.io/badge/version-1.4.9-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -192,21 +192,83 @@ SAP B1's `ContactPersonCode` field on documents (Quotations, Orders, Invoices) r
 - Sales Quotation dropdown shows the correct Contact Person selected
 - Contact Person is properly linked for subsequent documents
 
-## WP-CLI Testing (Developers)
+## WP-CLI Commands (Developers)
 
-Test the complete form submission workflow with real SAP B1 integration:
+### SAP B1 Direct Queries
+
+Query SAP B1 records by their unique identifiers:
 
 ```bash
-wp shift8-gravitysap test_submission --form_id=3
+# Look up a Business Partner by CardCode
+wp sap-query bp E00115
+wp sap-query bp E00115 --contacts --quotations
+
+# Look up a Sales Quotation by DocEntry
+wp sap-query quotation 285
+
+# Search Business Partners by name
+wp sap-query search "Emilie Cohen"
+
+# View SAP meta stored on a Gravity Forms entry
+wp sap-query entry 132 --verify
+
+# View the latest entry for a specific form
+wp sap-query entry --form_id=3 --verify
 ```
 
-This command will:
-1. Create a test entry in Gravity Forms
-2. Submit to SAP B1
-3. Verify data in SAP B1 (field-by-field comparison)
-4. Clean up test entry
+### End-to-End Test Submission
 
-Perfect for regression testing and debugging!
+Simulate a full form submission with real SAP B1 integration:
+
+```bash
+wp shift8-gravitysap test-submission --form_id=3
+wp shift8-gravitysap test-submission --form_id=3 --cleanup=false
+```
+
+This creates a test GF entry, submits to SAP B1, verifies the data, and optionally cleans up.
+
+### Duplicate Detection Test
+
+Test the Business Partner lookup performance and accuracy:
+
+```bash
+wp shift8-gravitysap-bp-lookup search --name="Acme Corp" --country=CA --postal="M5V 1A1" --verbose
+wp shift8-gravitysap-bp-lookup benchmark --iterations=5
+```
+
+### Master Data Queries
+
+Look up SAP B1 reference codes for field mapping configuration:
+
+```bash
+wp shift8-gravitysap-masterdata groups
+wp shift8-gravitysap-masterdata currencies
+wp shift8-gravitysap-masterdata pricelists
+```
+
+### Manual Test Workflow
+
+1. **Submit**: `wp shift8-gravitysap test-submission --form_id=3 --cleanup=false`
+2. **Check entry meta**: `wp sap-query entry --form_id=3 --verify`
+3. **Verify BP in SAP**: `wp sap-query bp <CardCode> --contacts --quotations`
+4. **Verify Quotation**: `wp sap-query quotation <DocEntry>`
+5. **Test duplicate detection**: Re-run step 1, confirm `sap_b1_bp_matched` = `1`
+6. **Cleanup**: Delete the test entry via GF admin
+
+### Entry Meta Reference
+
+Each processed GF entry stores these SAP B1 identifiers in meta:
+
+| Meta Key | Description |
+|---|---|
+| `sap_b1_status` | `processing`, `success`, or `failed` |
+| `sap_b1_cardcode` | SAP Business Partner CardCode (e.g., `E00115`) |
+| `sap_b1_bp_matched` | `1` if existing BP matched, `0` if new BP created |
+| `sap_b1_contact_name` | Contact Person name |
+| `sap_b1_contact_internal_code` | Contact Person InternalCode (numeric) |
+| `sap_b1_quotation_docentry` | Sales Quotation DocEntry (SAP primary key) |
+| `sap_b1_quotation_docnum` | Sales Quotation DocNum (user-facing number) |
+| `sap_b1_error` | Error message if submission failed |
 
 ## Troubleshooting
 
@@ -245,8 +307,12 @@ If you get "Value too long in property" errors:
 2. Plugin validates form has SAP integration enabled
 3. Data mapping occurs between form fields and SAP fields
 4. SAP authentication using encrypted credentials
-5. Business Partner creation via SAP Service Layer API
-6. Success/error logging and entry notes
+5. **Duplicate detection** (if enabled): checks SAP for existing BP matching Name + Country + Postal Code
+   - **Existing BP found**: reuses the BP, checks for existing Contact Person (by Name + Email), adds new contact if needed
+   - **No match found**: creates a new Business Partner with Contact Person
+6. Sales Quotation created and linked to the BP and Contact Person
+7. SAP identifiers (CardCode, DocEntry, InternalCode) stored in GF entry meta
+8. Success/error logging, entry notes, and status column updated
 
 ## Testing
 
@@ -256,16 +322,28 @@ cd /path/to/shift8-gravitysap
 vendor/bin/phpunit tests/unit/
 ```
 
-**Test Coverage**: 138 tests, 306 assertions - All passing ✅
-
 ### End-to-End Testing
 ```bash
-wp shift8-gravitysap test_submission --form_id=<id>
+wp shift8-gravitysap test-submission --form_id=<id>
 ```
 
-Tests real SAP B1 integration with data verification.
+Tests real SAP B1 integration including BP creation, Contact Person handling, Sales Quotation, and data verification.
+
+### Verifying SAP Records
+```bash
+wp sap-query entry --form_id=<id> --verify
+```
+
+Cross-references GF entry meta against live SAP B1 data to confirm records were created correctly.
 
 ## Changelog
+
+### 1.4.9
+* **NEW**: `wp sap-query` WP-CLI command for direct SAP B1 queries by CardCode, DocEntry, or entry ID
+* **NEW**: `wp sap-query entry --form_id=<id> --verify` to verify latest entry against SAP B1
+* **NEW**: SAP identifiers stored in GF entry meta: `sap_b1_bp_matched`, `sap_b1_contact_name`, `sap_b1_contact_internal_code`
+* **IMPROVED**: Entry list SAP Status column now shows BP match type, Quotation DocNum, and Contact name
+* **IMPROVED**: Comprehensive WP-CLI documentation for manual testing workflows
 
 ### 1.4.8
 * **CHANGED**: Switched to synchronous processing (standard GF add-on approach)
