@@ -659,6 +659,7 @@ class Shift8_GravitySAP {
             'ContactEmployees.Phone1' => esc_html__('Contact Person: Phone', 'shift8-gravity-forms-sap-b1-integration'),
             'ContactEmployees.E_Mail' => esc_html__('Contact Person: Email', 'shift8-gravity-forms-sap-b1-integration'),
             'ContactEmployees.Address' => esc_html__('Contact Person: Address', 'shift8-gravity-forms-sap-b1-integration'),
+            'FreeText' => esc_html__('Remarks/Notes', 'shift8-gravity-forms-sap-b1-integration'),
         );
     }
 
@@ -802,6 +803,11 @@ class Shift8_GravitySAP {
                 'max_length' => 254,
                 'required' => false,
                 'description' => 'Contact Person Address'
+            ),
+            'FreeText' => array(
+                'max_length' => 254,
+                'required' => false,
+                'description' => 'Remarks/Notes'
             ),
         );
     }
