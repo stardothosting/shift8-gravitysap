@@ -4,7 +4,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 **📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
 
-[![Version](https://img.shields.io/badge/version-1.4.9-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -338,10 +338,11 @@ Cross-references GF entry meta against live SAP B1 data to confirm records were 
 
 ## Changelog
 
-### 1.4.9
+### 1.5.0
 * **NEW**: `wp sap-query` WP-CLI command for direct SAP B1 queries by CardCode, DocEntry, or entry ID
 * **NEW**: `wp sap-query entry --form_id=<id> --verify` to verify latest entry against SAP B1
 * **NEW**: SAP identifiers stored in GF entry meta: `sap_b1_bp_matched`, `sap_b1_contact_name`, `sap_b1_contact_internal_code`
+* **NEW**: Remarks/Notes (`FreeText`) field available in Business Partner field mapping
 * **IMPROVED**: Entry list SAP Status column now shows BP match type, Quotation DocNum, and Contact name
 * **IMPROVED**: Comprehensive WP-CLI documentation for manual testing workflows
 

@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.4.9
+* Stable tag: 1.5.0
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -131,9 +131,10 @@ When a Business Partner match is found (or a new one is created), the plugin aut
 
 == Changelog ==
 
-= 1.4.9 =
+= 1.5.0 =
 * **NEW**: WP-CLI `sap-query` command for direct SAP B1 record queries (bp, quotation, entry, search)
 * **NEW**: SAP identifiers stored in GF entry meta for cross-referencing (bp_matched, contact_name, contact_internal_code)
+* **NEW**: Remarks/Notes (FreeText) field available in Business Partner field mapping
 * **IMPROVED**: Entry list SAP Status column shows BP match type, Quotation DocNum, and Contact name
 * **IMPROVED**: Comprehensive WP-CLI documentation for manual testing and verification workflows
 
