@@ -274,16 +274,15 @@ class BPLookupTest extends TestCase {
      * Test find_existing_business_partner requires postal code
      */
     public function test_find_existing_bp_requires_postal() {
-        // Search with empty postal code - should return not found with error
+        // Search with empty postal code and no email - should return not found with error
         $result = $this->sap_service->find_existing_business_partner(
             'Test Company Inc',
             'CA',
-            '' // Empty postal - should fail validation
+            '' // Empty postal - no email fallback either
         );
         
-        $this->assertFalse($result['found'], 'Should not match with empty postal code');
+        $this->assertFalse($result['found'], 'Should not match with empty postal code and no email');
         $this->assertNotNull($result['error'], 'Should have error message');
-        $this->assertStringContainsString('required', $result['error'], 'Error should mention required fields');
     }
 
     /**
@@ -418,6 +417,142 @@ class BPLookupTest extends TestCase {
         $this->assertTrue($result['found'], 'Should handle special characters in name');
     }
     
+    /**
+     * Test find_existing_business_partner matches by email
+     */
+    public function test_find_existing_bp_email_match() {
+        $this->mock_sequential_http_responses(
+            array(
+                json_encode(array('SessionId' => 'test_session')),
+                json_encode(array('value' => array(
+                    array(
+                        'CardCode' => 'E00824',
+                        'CardName' => 'Sherry Hill',
+                        'EmailAddress' => 'shill@peterboromatboards.com',
+                        'BPAddresses' => array()
+                    )
+                )))
+            ),
+            array(200, 200)
+        );
+        
+        $result = $this->sap_service->find_existing_business_partner(
+            'Completely Different Name',
+            'CA',
+            'K9J 6X7',
+            'shill@peterboromatboards.com'
+        );
+        
+        $this->assertTrue($result['found'], 'Should find BP by email even with different name');
+        $this->assertEquals('E00824', $result['card_code']);
+        $this->assertEquals('email', $result['match_type']);
+    }
+
+    /**
+     * Test email match takes priority over name+address match
+     */
+    public function test_find_existing_bp_email_priority() {
+        $this->mock_sequential_http_responses(
+            array(
+                json_encode(array('SessionId' => 'test_session')),
+                json_encode(array('value' => array(
+                    array(
+                        'CardCode' => 'E00824',
+                        'CardName' => 'Sherry Hill',
+                        'EmailAddress' => 'shill@peterboromatboards.com',
+                        'BPAddresses' => array()
+                    )
+                )))
+            ),
+            array(200, 200)
+        );
+        
+        $result = $this->sap_service->find_existing_business_partner(
+            'Sherry Hill',
+            'CA',
+            'K9J 6X7',
+            'shill@peterboromatboards.com'
+        );
+        
+        $this->assertTrue($result['found']);
+        $this->assertEquals('email', $result['match_type'], 'Email match should take priority');
+    }
+
+    /**
+     * Test email not found falls through to name+address check
+     */
+    public function test_find_existing_bp_email_miss_falls_through() {
+        $this->mock_sequential_http_responses(
+            array(
+                json_encode(array('SessionId' => 'test_session')),
+                json_encode(array('value' => array())), // email - no match
+                json_encode(array('value' => array( // exact name match with address
+                    array(
+                        'CardCode' => 'C10001',
+                        'CardName' => 'Test Company Inc',
+                        'EmailAddress' => 'different@example.com',
+                        'BPAddresses' => array(
+                            array('Country' => 'CA', 'ZipCode' => 'M5V 1A1')
+                        )
+                    )
+                )))
+            ),
+            array(200, 200, 200)
+        );
+        
+        $result = $this->sap_service->find_existing_business_partner(
+            'Test Company Inc',
+            'CA',
+            'M5V 1A1',
+            'nomatch@example.com'
+        );
+        
+        $this->assertTrue($result['found'], 'Should fall through to name+address match');
+        $this->assertEquals('C10001', $result['card_code']);
+        $this->assertEquals('name_address', $result['match_type']);
+    }
+
+    /**
+     * Test email-only lookup (no name/country/postal)
+     */
+    public function test_find_existing_bp_email_only() {
+        $this->mock_sequential_http_responses(
+            array(
+                json_encode(array('SessionId' => 'test_session')),
+                json_encode(array('value' => array(
+                    array(
+                        'CardCode' => 'E00854',
+                        'CardName' => 'Testing one two three',
+                        'EmailAddress' => 'shill@peterboromatboards.com',
+                        'BPAddresses' => array()
+                    )
+                )))
+            ),
+            array(200, 200)
+        );
+        
+        $result = $this->sap_service->find_existing_business_partner(
+            '',
+            '',
+            '',
+            'shill@peterboromatboards.com'
+        );
+        
+        $this->assertTrue($result['found'], 'Should find BP with email-only lookup');
+        $this->assertEquals('E00854', $result['card_code']);
+        $this->assertEquals('email', $result['match_type']);
+    }
+
+    /**
+     * Test no email and no name criteria returns error
+     */
+    public function test_find_existing_bp_no_criteria() {
+        $result = $this->sap_service->find_existing_business_partner('', '', '', '');
+        
+        $this->assertFalse($result['found']);
+        $this->assertNotNull($result['error']);
+    }
+
     /**
      * Test get_business_partner returns BP data
      */

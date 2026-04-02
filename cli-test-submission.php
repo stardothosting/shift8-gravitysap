@@ -1335,14 +1335,17 @@ class Shift8_GravitySAP_BP_Lookup_Command {
      *
      * ## OPTIONS
      *
-     * --name=<name>
+     * [--name=<name>]
      * : Business Partner name to search for (case-insensitive)
      *
-     * --country=<country>
+     * [--country=<country>]
      * : 2-letter country code (e.g., US, CA, GB)
      *
-     * --postal=<postal>
+     * [--postal=<postal>]
      * : Postal/ZIP code
+     *
+     * [--email=<email>]
+     * : Email address to check (matches if any existing BP uses this email)
      *
      * [--verbose]
      * : Show detailed timing and query information
@@ -1350,7 +1353,8 @@ class Shift8_GravitySAP_BP_Lookup_Command {
      * ## EXAMPLES
      *
      *     wp shift8-gravitysap-bp-lookup search --name="Test Company" --country=US --postal=12345
-     *     wp shift8-gravitysap-bp-lookup search --name="Acme Corp" --country=CA --postal="M5V 1A1" --verbose
+     *     wp shift8-gravitysap-bp-lookup search --email="shill@peterboromatboards.com"
+     *     wp shift8-gravitysap-bp-lookup search --name="Acme Corp" --country=CA --postal="M5V 1A1" --email="info@acme.com" --verbose
      *
      * @param array $args
      * @param array $assoc_args
@@ -1359,20 +1363,14 @@ class Shift8_GravitySAP_BP_Lookup_Command {
         $name = isset($assoc_args['name']) ? sanitize_text_field($assoc_args['name']) : '';
         $country = isset($assoc_args['country']) ? strtoupper(sanitize_text_field($assoc_args['country'])) : '';
         $postal = isset($assoc_args['postal']) ? sanitize_text_field($assoc_args['postal']) : '';
+        $email = isset($assoc_args['email']) ? sanitize_text_field($assoc_args['email']) : '';
         $verbose = isset($assoc_args['verbose']);
         
-        if (empty($name)) {
-            WP_CLI::error('Please specify a Business Partner name: --name="Company Name"');
-            return;
-        }
+        $has_name_criteria = !empty($name) && !empty($country) && !empty($postal);
+        $has_email = !empty($email);
         
-        if (empty($country)) {
-            WP_CLI::error('Please specify a country code: --country=US');
-            return;
-        }
-        
-        if (empty($postal)) {
-            WP_CLI::error('Please specify a postal code: --postal=12345');
+        if (!$has_name_criteria && !$has_email) {
+            WP_CLI::error('Provide either --email or (--name + --country + --postal)');
             return;
         }
         
@@ -1380,9 +1378,19 @@ class Shift8_GravitySAP_BP_Lookup_Command {
         WP_CLI::line('=== Business Partner Lookup Test ===');
         WP_CLI::line('');
         WP_CLI::line('Search Criteria:');
-        WP_CLI::line("  Name:    {$name} (case-insensitive)");
-        WP_CLI::line("  Country: {$country}");
-        WP_CLI::line("  Postal:  {$postal}");
+        if (!empty($name)) {
+            WP_CLI::line("  Name:    {$name} (case-insensitive)");
+        }
+        if (!empty($country)) {
+            WP_CLI::line("  Country: {$country}");
+        }
+        if (!empty($postal)) {
+            WP_CLI::line("  Postal:  {$postal}");
+        }
+        if (!empty($email)) {
+            WP_CLI::line("  Email:   {$email}");
+        }
+        WP_CLI::line("  Logic:   (Name+Country+Postal) OR (Email)");
         WP_CLI::line('');
         
         try {
@@ -1419,7 +1427,7 @@ class Shift8_GravitySAP_BP_Lookup_Command {
             
             // Perform the lookup using centralized method
             $lookup_start = microtime(true);
-            $result = $sap_service->find_existing_business_partner($name, $country, $postal);
+            $result = $sap_service->find_existing_business_partner($name, $country, $postal, $email);
             $lookup_time = round((microtime(true) - $lookup_start) * 1000, 2);
             
             WP_CLI::line('');
@@ -1427,15 +1435,18 @@ class Shift8_GravitySAP_BP_Lookup_Command {
             WP_CLI::line('');
             
             if ($result['found']) {
-                WP_CLI::success("Found matching Business Partner!");
+                $match_type = $result['match_type'] ?? 'unknown';
+                $match_label = ($match_type === 'email') ? 'email match' : 'name+address match';
+                WP_CLI::success("Found matching Business Partner! ({$match_label})");
                 WP_CLI::line('');
-                WP_CLI::line("  CardCode: {$result['card_code']}");
-                WP_CLI::line("  CardName: {$result['card_name']}");
+                WP_CLI::line("  CardCode:   {$result['card_code']}");
+                WP_CLI::line("  CardName:   {$result['card_name']}");
+                WP_CLI::line("  Match Type: {$match_type}");
                 if (!empty($result['address_country'])) {
-                    WP_CLI::line("  Country:  {$result['address_country']}");
+                    WP_CLI::line("  Country:    {$result['address_country']}");
                 }
                 if (!empty($result['address_postal'])) {
-                    WP_CLI::line("  Postal:   {$result['address_postal']}");
+                    WP_CLI::line("  Postal:     {$result['address_postal']}");
                 }
             } else {
                 WP_CLI::warning("No matching Business Partner found.");
@@ -1591,6 +1602,117 @@ class Shift8_GravitySAP_BP_Lookup_Command {
             
         } catch (Exception $e) {
             WP_CLI::error('Error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Run BP lookup test scenarios defined in .cursorrules
+     *
+     * Reads test scenarios from the plugin's .cursorrules file (gitignored)
+     * and runs each one against live SAP, reporting pass/fail.
+     *
+     * ## EXAMPLES
+     *
+     *     wp shift8-gravitysap-bp-lookup run-tests
+     *
+     * @param array $args
+     * @param array $assoc_args
+     */
+    public function run_tests($args, $assoc_args) {
+        $rules_file = plugin_dir_path(__FILE__) . '.cursorrules';
+        if (!file_exists($rules_file)) {
+            WP_CLI::error('.cursorrules file not found. Create it with bpLookupTestScenarios.');
+            return;
+        }
+
+        $rules = json_decode(file_get_contents($rules_file), true);
+        $scenarios = $rules['wpCliCommands']['bpLookupTestScenarios']['scenarios']
+            ?? $rules['bpLookupTestScenarios']['scenarios']
+            ?? null;
+        if (empty($scenarios)) {
+            WP_CLI::error('No test scenarios found in .cursorrules under bpLookupTestScenarios.scenarios');
+            return;
+        }
+
+        $sap_settings = get_option('shift8_gravitysap_settings', array());
+        if (empty($sap_settings['sap_endpoint']) || empty($sap_settings['sap_username']) || empty($sap_settings['sap_password'])) {
+            WP_CLI::error('SAP connection settings not configured.');
+            return;
+        }
+        $sap_settings['sap_password'] = shift8_gravitysap_decrypt_password($sap_settings['sap_password']);
+
+        require_once plugin_dir_path(__FILE__) . 'includes/class-shift8-gravitysap-sap-service.php';
+        $sap_service = new Shift8_GravitySAP_SAP_Service($sap_settings);
+
+        $reflection = new ReflectionClass($sap_service);
+        $auth_method = $reflection->getMethod('ensure_authenticated');
+        $auth_method->setAccessible(true);
+        if (!$auth_method->invoke($sap_service)) {
+            WP_CLI::error('Failed to authenticate with SAP B1');
+            return;
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line('=== BP Duplicate Detection Test Suite ===');
+        WP_CLI::line('Scenarios: ' . count($scenarios));
+        WP_CLI::line(str_repeat('=', 55));
+
+        $passed = 0;
+        $failed = 0;
+
+        foreach ($scenarios as $scenario) {
+            $id = $scenario['id'];
+            $label = $scenario['label'];
+            WP_CLI::line('');
+            WP_CLI::line("▶ [{$id}] {$label}");
+
+            $name = $scenario['name'] ?? '';
+            $country = $scenario['country'] ?? '';
+            $postal = $scenario['postal'] ?? '';
+            $email = $scenario['email'] ?? '';
+
+            $result = $sap_service->find_existing_business_partner($name, $country, $postal, $email);
+
+            $errors = array();
+
+            $expect_found = $scenario['expect_found'];
+            if ($result['found'] !== $expect_found) {
+                $errors[] = sprintf('  found: expected %s, got %s', $expect_found ? 'true' : 'false', $result['found'] ? 'true' : 'false');
+            }
+
+            $expect_cc = $scenario['expect_card_code'];
+            if ($expect_cc !== null && $result['card_code'] !== $expect_cc) {
+                $errors[] = sprintf('  card_code: expected %s, got %s', $expect_cc, $result['card_code'] ?? 'null');
+            }
+            if ($expect_cc === null && $result['card_code'] !== null) {
+                $errors[] = sprintf('  card_code: expected null, got %s', $result['card_code']);
+            }
+
+            $expect_mt = $scenario['expect_match_type'];
+            if ($expect_mt !== null && ($result['match_type'] ?? null) !== $expect_mt) {
+                $errors[] = sprintf('  match_type: expected %s, got %s', $expect_mt, $result['match_type'] ?? 'null');
+            }
+
+            if (empty($errors)) {
+                $passed++;
+                $match_info = $result['found'] ? " → {$result['card_code']} ({$result['match_type']})" : '';
+                WP_CLI::success("PASS{$match_info}");
+            } else {
+                $failed++;
+                WP_CLI::warning('FAIL');
+                foreach ($errors as $err) {
+                    WP_CLI::line($err);
+                }
+            }
+        }
+
+        WP_CLI::line('');
+        WP_CLI::line(str_repeat('=', 55));
+        WP_CLI::line("Results: {$passed} passed, {$failed} failed, " . count($scenarios) . ' total');
+        if ($failed === 0) {
+            WP_CLI::success('All tests passed.');
+        } else {
+            WP_CLI::error("{$failed} test(s) failed.");
         }
     }
 }

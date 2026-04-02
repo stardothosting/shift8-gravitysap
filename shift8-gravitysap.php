@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.5.0');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.6.0');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2064,6 +2064,7 @@ class Shift8_GravitySAP {
     private function check_for_existing_business_partner($sap_service, $business_partner_data) {
         // Extract lookup fields from business partner data
         $name = rgar($business_partner_data, 'CardName', '');
+        $email = rgar($business_partner_data, 'EmailAddress', '');
         $country = '';
         $postal = '';
         
@@ -2082,10 +2083,13 @@ class Shift8_GravitySAP {
             $postal = rgar($business_partner_data, 'ZipCode', '');
         }
         
-        // Need at least name and country for lookup
-        if (empty($name) || empty($country)) {
+        $has_name_criteria = !empty($name) && !empty($country);
+        $has_email = !empty($email);
+        
+        if (!$has_name_criteria && !$has_email) {
             shift8_gravitysap_debug_log('⚠️ Cannot check for existing BP: Missing required fields', array(
                 'name' => $name,
+                'email' => $email,
                 'country' => $country,
                 'postal' => $postal
             ));
@@ -2094,12 +2098,13 @@ class Shift8_GravitySAP {
         
         shift8_gravitysap_debug_log('🔍 Checking for existing Business Partner', array(
             'name' => $name,
+            'email' => $email,
             'country' => $country,
             'postal' => $postal
         ));
         
-        // Use centralized lookup function from SAP Service
-        $result = $sap_service->find_existing_business_partner($name, $country, $postal);
+        // Use centralized lookup: matches on (name+country+postal) OR (email)
+        $result = $sap_service->find_existing_business_partner($name, $country, $postal, $email);
         
         if ($result['found'] && !empty($result['card_code'])) {
             shift8_gravitysap_debug_log('✅ Found existing Business Partner', array(

@@ -1314,29 +1314,32 @@ class Shift8_GravitySAP_SAP_Service {
      * @param string $postal Postal/ZIP code
      * @return array Result with 'found', 'card_code', 'card_name', etc.
      */
-    public function find_existing_business_partner($name, $country, $postal) {
+    public function find_existing_business_partner($name, $country, $postal, $email = '') {
         $result = array(
             'found' => false,
             'card_code' => null,
             'card_name' => null,
             'address_country' => null,
             'address_postal' => null,
+            'match_type' => null,
             'records_scanned' => 0,
             'error' => null
         );
 
-        // Validate inputs
-        if (empty($name) || empty($country) || empty($postal)) {
-            $result['error'] = 'Name, country, and postal code are all required for lookup';
+        $has_name_criteria = !empty($name) && !empty($country) && !empty($postal);
+        $has_email_criteria = !empty($email);
+
+        if (!$has_name_criteria && !$has_email_criteria) {
+            $result['error'] = 'Need either (name + country + postal) or email for lookup';
             shift8_gravitysap_debug_log('BP Lookup: Missing required parameters', array(
                 'name' => !empty($name),
                 'country' => !empty($country),
-                'postal' => !empty($postal)
+                'postal' => !empty($postal),
+                'email' => !empty($email)
             ));
             return $result;
         }
 
-        // Ensure authenticated
         if (!$this->ensure_authenticated()) {
             $result['error'] = 'Failed to authenticate with SAP';
             return $result;
@@ -1345,77 +1348,104 @@ class Shift8_GravitySAP_SAP_Service {
         shift8_gravitysap_debug_log('=== STARTING BUSINESS PARTNER LOOKUP ===', array(
             'name' => $name,
             'country' => $country,
-            'postal' => $postal
+            'postal' => $postal,
+            'email' => $email
         ));
 
-        // Normalize search name for case-insensitive comparison
-        $search_name_normalized = strtolower(trim($name));
+        $select = 'CardCode,CardName,EmailAddress,BPAddresses';
 
-        // Escape single quotes for OData query
-        $escaped_name = str_replace("'", "''", $name);
+        // Strategy 1: Email match (most reliable unique identifier)
+        if ($has_email_criteria) {
+            $escaped_email = str_replace("'", "''", $email);
+            $filter = "EmailAddress eq '{$escaped_email}'";
+            $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}&\$top=1";
 
-        // Select fields including BPAddresses
-        $select = 'CardCode,CardName,BPAddresses';
+            shift8_gravitysap_debug_log('BP Lookup Strategy 1: Email match', array('filter' => $filter));
 
-        // Strategy 1: Try exact CardName match first (most efficient)
-        $filter = "CardName eq '{$escaped_name}'";
-        $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}";
+            $response = $this->make_request('GET', $query);
+            $email_matches = $this->parse_bp_lookup_response($response);
+            $result['records_scanned'] += count($email_matches);
 
-        shift8_gravitysap_debug_log('BP Lookup Strategy 1: Exact match', array('filter' => $filter));
-
-        $response = $this->make_request('GET', $query);
-        $exact_matches = $this->parse_bp_lookup_response($response);
-
-        foreach ($exact_matches as $bp) {
-            if ($this->bp_has_matching_address($bp, $country, $postal)) {
+            if (!empty($email_matches)) {
+                $bp = $email_matches[0];
                 $result['found'] = true;
                 $result['card_code'] = $bp['CardCode'];
                 $result['card_name'] = $bp['CardName'];
-                $result['address_country'] = $country;
-                $result['address_postal'] = $postal;
-                $result['records_scanned'] = count($exact_matches);
+                $result['match_type'] = 'email';
 
-                shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (exact)', array(
+                shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (email)', array(
                     'card_code' => $bp['CardCode'],
-                    'card_name' => $bp['CardName']
+                    'card_name' => $bp['CardName'],
+                    'email' => $bp['EmailAddress'] ?? $email
                 ));
                 return $result;
             }
         }
 
-        // Strategy 2: Broader search with 'startswith' for case variations
-        $first_word = explode(' ', trim($name))[0];
-        $escaped_first_word = str_replace("'", "''", $first_word);
+        // Strategy 2: Exact CardName + address match
+        if ($has_name_criteria) {
+            $search_name_normalized = strtolower(trim($name));
+            $escaped_name = str_replace("'", "''", $name);
 
-        if (strlen($first_word) >= 3) {
-            $filter = "startswith(CardName, '{$escaped_first_word}')";
-            $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}&\$top=100";
+            $filter = "CardName eq '{$escaped_name}'";
+            $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}";
 
-            shift8_gravitysap_debug_log('BP Lookup Strategy 2: Startswith', array('filter' => $filter));
+            shift8_gravitysap_debug_log('BP Lookup Strategy 2: Exact name match', array('filter' => $filter));
 
             $response = $this->make_request('GET', $query);
-            $startswith_matches = $this->parse_bp_lookup_response($response);
+            $exact_matches = $this->parse_bp_lookup_response($response);
+            $result['records_scanned'] += count($exact_matches);
 
-            $result['records_scanned'] += count($startswith_matches);
-
-            foreach ($startswith_matches as $bp) {
-                $bp_name_normalized = strtolower(trim($bp['CardName'] ?? ''));
-
-                // Case-insensitive name match AND address match
-                if ($bp_name_normalized === $search_name_normalized && 
-                    $this->bp_has_matching_address($bp, $country, $postal)) {
-                    
+            foreach ($exact_matches as $bp) {
+                if ($this->bp_has_matching_address($bp, $country, $postal)) {
                     $result['found'] = true;
                     $result['card_code'] = $bp['CardCode'];
                     $result['card_name'] = $bp['CardName'];
                     $result['address_country'] = $country;
                     $result['address_postal'] = $postal;
+                    $result['match_type'] = 'name_address';
 
-                    shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (case-insensitive)', array(
+                    shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (exact name + address)', array(
                         'card_code' => $bp['CardCode'],
                         'card_name' => $bp['CardName']
                     ));
                     return $result;
+                }
+            }
+
+            // Strategy 3: Startswith fallback for case variations
+            $first_word = explode(' ', trim($name))[0];
+            $escaped_first_word = str_replace("'", "''", $first_word);
+
+            if (strlen($first_word) >= 3) {
+                $filter = "startswith(CardName, '{$escaped_first_word}')";
+                $query = "/BusinessPartners?\$filter=" . rawurlencode($filter) . "&\$select={$select}&\$top=100";
+
+                shift8_gravitysap_debug_log('BP Lookup Strategy 3: Startswith', array('filter' => $filter));
+
+                $response = $this->make_request('GET', $query);
+                $startswith_matches = $this->parse_bp_lookup_response($response);
+                $result['records_scanned'] += count($startswith_matches);
+
+                foreach ($startswith_matches as $bp) {
+                    $bp_name_normalized = strtolower(trim($bp['CardName'] ?? ''));
+
+                    if ($bp_name_normalized === $search_name_normalized && 
+                        $this->bp_has_matching_address($bp, $country, $postal)) {
+                        
+                        $result['found'] = true;
+                        $result['card_code'] = $bp['CardCode'];
+                        $result['card_name'] = $bp['CardName'];
+                        $result['address_country'] = $country;
+                        $result['address_postal'] = $postal;
+                        $result['match_type'] = 'name_address_ci';
+
+                        shift8_gravitysap_debug_log('BP Lookup: MATCH FOUND (case-insensitive name + address)', array(
+                            'card_code' => $bp['CardCode'],
+                            'card_name' => $bp['CardName']
+                        ));
+                        return $result;
+                    }
                 }
             }
         }

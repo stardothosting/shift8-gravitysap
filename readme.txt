@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.5.0
+* Stable tag: 1.6.0
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -21,9 +21,13 @@ For a complete setup guide and technical walkthrough, see our blog post: [How to
 
 * **Seamless Integration**: Direct integration with SAP Business One Service Layer API
 * **Field Mapping**: Flexible mapping between Gravity Forms fields and SAP Business Partner fields
+* **Contact Person Support**: Map form fields to Contact Persons tab in SAP B1
+* **Sales Quotation Creation**: Automatically create Sales Quotations with checkbox-based line item mapping
+* **Duplicate Detection**: Prevent duplicate Business Partners using email OR name+address matching
 * **Automatic Form Validation**: Real-time validation against SAP field limits before submission
 * **Security First**: Password encryption, input validation, and secure API communication
 * **Real-time Testing**: Built-in connection and integration testing tools
+* **WP-CLI Testing**: End-to-end testing and SAP B1 query commands for developers
 * **Comprehensive Logging**: Detailed debug logging with sensitive data protection
 * **User-Friendly Interface**: Intuitive settings and configuration interface
 * **Error Handling**: Robust error handling with detailed feedback
@@ -97,15 +101,16 @@ This is ideal for sample request forms, multi-product orders, and service select
 
 = How do I prevent duplicate Business Partners? =
 
-Enable **Check for existing Business Partner** in your form's SAP Integration settings. The plugin will search SAP B1 for existing Business Partners matching:
+Enable **Check for existing Business Partner** in your form's SAP Integration settings. The plugin uses an OR strategy -- a match on either condition prevents duplicates:
 
-* Business Partner Name (case-insensitive)
-* Country (from address)
-* Postal/ZIP Code (from address)
+* **Email match** (checked first): EmailAddress matches an existing BP in SAP
+* **Name + Address match** (fallback): Business Partner Name (case-insensitive) + Country + Postal/ZIP Code
 
 If a match is found, the plugin uses the existing Business Partner instead of creating a duplicate. You can test this with WP-CLI:
 
+`wp shift8-gravitysap-bp-lookup search --email="info@example.com"`
 `wp shift8-gravitysap-bp-lookup search --name="Test Company" --country="CA" --postal="M5V 1A1"`
+`wp shift8-gravitysap-bp-lookup run_tests`
 
 = How are Contact Persons linked to Sales Quotations? =
 
@@ -130,6 +135,14 @@ When a Business Partner match is found (or a new one is created), the plugin aut
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.6.0 =
+* **NEW**: Email-based duplicate Business Partner detection - matches if email OR (name+country+postal) already exists in SAP
+* **NEW**: Automated test suite for duplicate detection (`wp shift8-gravitysap-bp-lookup run_tests`) reads scenarios from gitignored config
+* **IMPROVED**: Email check runs first as most reliable unique identifier before name+address fallback
+* **IMPROVED**: WP-CLI `bp-lookup search` now supports `--email` parameter for email-only or combined lookups
+* **IMPROVED**: BP lookup result includes `match_type` field for match transparency
+* **IMPROVED**: Updated documentation for duplicate detection, field mapping, and manual test workflows
 
 = 1.5.0 =
 * **NEW**: WP-CLI `sap-query` command for direct SAP B1 record queries (bp, quotation, entry, search)
@@ -366,6 +379,15 @@ When a Business Partner match is found (or a new one is created), the plugin aut
 
 == Upgrade Notice ==
 
+= 1.6.0 =
+Email-based duplicate detection: Business Partners now matched by email OR name+address. Includes automated test suite for duplicate detection scenarios.
+
+= 1.5.0 =
+New WP-CLI `sap-query` command for direct SAP B1 queries. SAP identifiers now stored in GF entry meta. Remarks/Notes field available for mapping.
+
+= 1.4.8 =
+Switched to synchronous processing for reliable operation on all hosting environments.
+
 = 1.2.0 =
 Major update with Contact Person support! You can now map form fields to the Contact Persons tab in SAP B1. Includes new WP-CLI testing command for developers.
 
@@ -447,6 +469,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 | `Cellular` | Mobile Phone | No | ~20 chars |
 | `Fax` | Fax Number | No | ~20 chars |
 | `Website` | Website URL | No | URL format |
+| `FreeText` | Remarks/Notes | No | ~254 chars |
 
 ### Address Fields (BPAddresses - appears in General tab)
 | SAP Field | Description | Required | Max Length |
@@ -508,8 +531,12 @@ If you get "Value too long in property" errors:
 2. Plugin validates form has SAP integration enabled
 3. Data mapping occurs between form fields and SAP fields
 4. SAP authentication using encrypted credentials
-5. Business Partner creation via SAP Service Layer API
-6. Success/error logging and entry notes
+5. Duplicate detection (if enabled): checks SAP for existing BP matching Email OR (Name + Country + Postal)
+   - Existing BP found: reuses the BP, checks for existing Contact Person, adds new contact if needed
+   - No match found: creates a new Business Partner with Contact Person
+6. Sales Quotation created and linked to the BP and Contact Person
+7. SAP identifiers (CardCode, DocEntry, InternalCode) stored in GF entry meta
+8. Success/error logging, entry notes, and status column updated
 
 ## Support
 

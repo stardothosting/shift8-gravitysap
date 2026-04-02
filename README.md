@@ -4,7 +4,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 **📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -82,6 +82,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 | `Cellular` | Mobile Phone | No | ~20 chars |
 | `Fax` | Fax Number | No | ~20 chars |
 | `Website` | Website URL | No | URL format |
+| `FreeText` | Remarks/Notes | No | ~254 chars |
 
 ### Address Fields (BPAddresses - appears in General tab)
 | SAP Field | Description | Required | Max Length |
@@ -148,20 +149,29 @@ When enabled, the plugin can check for existing Business Partners before creatin
 2. Enable **Check for existing Business Partner**
 
 **How It Works:**
-- The plugin searches SAP B1 for existing Business Partners matching:
-  - **Business Partner Name** (case-insensitive)
-  - **Country** (from address)
-  - **Postal/ZIP Code** (from address)
-- If a match is found, the plugin uses the existing Business Partner instead of creating a duplicate
-- Sales Quotations are then created under the existing Business Partner
+
+The plugin uses an **OR** strategy -- a match on **either** condition prevents duplicates:
+
+- **Email match** (checked first, most reliable): `EmailAddress` matches an existing BP in SAP
+- **Name + Address match** (fallback): `CardName` (case-insensitive) + `Country` + `Postal/ZIP Code` match
+
+If a match is found, the plugin uses the existing Business Partner instead of creating a duplicate. Sales Quotations are created under the existing BP.
+
+The result includes a `match_type` field (`email`, `name_address`, or `name_address_ci`) so logs clearly show how the duplicate was detected.
 
 **WP-CLI Testing:**
 ```bash
-# Search for existing Business Partner
+# Search by email only
+wp shift8-gravitysap-bp-lookup search --email="info@example.com"
+
+# Search by name + address only
 wp shift8-gravitysap-bp-lookup search --name="Test Company" --country="CA" --postal="M5V 1A1"
 
-# Benchmark lookup performance
-wp shift8-gravitysap-bp-lookup benchmark --name="Test Company" --country="CA" --postal="M5V 1A1"
+# Combined (email checked first, then name+address fallback)
+wp shift8-gravitysap-bp-lookup search --name="Test Company" --country="CA" --postal="M5V 1A1" --email="info@example.com"
+
+# Run all test scenarios defined in .cursorrules (gitignored)
+wp shift8-gravitysap-bp-lookup run_tests
 ```
 
 ### Contact Person Linking
@@ -232,7 +242,15 @@ This creates a test GF entry, submits to SAP B1, verifies the data, and optional
 Test the Business Partner lookup performance and accuracy:
 
 ```bash
+# Search by email, name+address, or both
+wp shift8-gravitysap-bp-lookup search --email="info@example.com"
 wp shift8-gravitysap-bp-lookup search --name="Acme Corp" --country=CA --postal="M5V 1A1" --verbose
+wp shift8-gravitysap-bp-lookup search --name="Acme Corp" --country=CA --postal="M5V 1A1" --email="info@acme.com"
+
+# Run all test scenarios from .cursorrules (gitignored, safe for client data)
+wp shift8-gravitysap-bp-lookup run_tests
+
+# Benchmark lookup performance
 wp shift8-gravitysap-bp-lookup benchmark --iterations=5
 ```
 
@@ -248,12 +266,14 @@ wp shift8-gravitysap-masterdata pricelists
 
 ### Manual Test Workflow
 
-1. **Submit**: `wp shift8-gravitysap test-submission --form_id=3 --cleanup=false`
+1. **Submit**: `wp shift8-gravitysap test_submission --form_id=3 --cleanup=false`
 2. **Check entry meta**: `wp sap-query entry --form_id=3 --verify`
 3. **Verify BP in SAP**: `wp sap-query bp <CardCode> --contacts --quotations`
 4. **Verify Quotation**: `wp sap-query quotation <DocEntry>`
 5. **Test duplicate detection**: Re-run step 1, confirm `sap_b1_bp_matched` = `1`
-6. **Cleanup**: Delete the test entry via GF admin
+6. **Test email dedup**: `wp shift8-gravitysap-bp-lookup search --email="<email from step 1>"`
+7. **Run all dedup scenarios**: `wp shift8-gravitysap-bp-lookup run_tests`
+8. **Cleanup**: Delete the test entry via GF admin
 
 ### Entry Meta Reference
 
@@ -307,8 +327,8 @@ If you get "Value too long in property" errors:
 2. Plugin validates form has SAP integration enabled
 3. Data mapping occurs between form fields and SAP fields
 4. SAP authentication using encrypted credentials
-5. **Duplicate detection** (if enabled): checks SAP for existing BP matching Name + Country + Postal Code
-   - **Existing BP found**: reuses the BP, checks for existing Contact Person (by Name + Email), adds new contact if needed
+5. **Duplicate detection** (if enabled): checks SAP for existing BP matching **Email** OR **(Name + Country + Postal Code)**
+   - **Existing BP found** (via email or name+address): reuses the BP, checks for existing Contact Person (by Name + Email), adds new contact if needed
    - **No match found**: creates a new Business Partner with Contact Person
 6. Sales Quotation created and linked to the BP and Contact Person
 7. SAP identifiers (CardCode, DocEntry, InternalCode) stored in GF entry meta
@@ -337,6 +357,15 @@ wp sap-query entry --form_id=<id> --verify
 Cross-references GF entry meta against live SAP B1 data to confirm records were created correctly.
 
 ## Changelog
+
+### 1.6.0
+* **NEW**: Email-based duplicate Business Partner detection - matches if email OR (name+country+postal) already exists in SAP
+* **NEW**: `wp shift8-gravitysap-bp-lookup run_tests` command reads test scenarios from `.cursorrules` (gitignored) and runs them against live SAP with pass/fail output
+* **IMPROVED**: Email check runs first as the most reliable unique identifier before falling back to name+address matching
+* **IMPROVED**: WP-CLI `bp-lookup search` command now supports `--email` parameter for email-only or combined lookups
+* **IMPROVED**: BP lookup result includes `match_type` field (email, name_address, name_address_ci) for transparency
+* **IMPROVED**: Updated documentation for duplicate detection, field mapping, and manual test workflows
+* **TESTS**: 5 new email deduplication tests (141 total tests, 316 assertions)
 
 ### 1.5.0
 * **NEW**: `wp sap-query` WP-CLI command for direct SAP B1 queries by CardCode, DocEntry, or entry ID
