@@ -4,7 +4,7 @@
 * Tags: gravity forms, sap, business one, integration, crm
 * Requires at least: 5.0
 * Tested up to: 6.8
-* Stable tag: 1.6.0
+* Stable tag: 1.6.1
 * Requires PHP: 7.4
 * License: GPLv3
 * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -135,6 +135,11 @@ When a Business Partner match is found (or a new one is created), the plugin aut
 4. Debug logging interface
 
 == Changelog ==
+
+= 1.6.1 =
+* **NEW**: SAP B1 Processed notification event for emails that need SAP response data after quotation creation
+* **NEW**: SAP merge tags for notifications, including `{sap_quotation_number}` for the Sales Quotation DocNum
+* **IMPROVED**: Post-SAP notifications are sent only after SAP metadata is saved and are protected against duplicate sends
 
 = 1.6.0 =
 * **NEW**: Email-based duplicate Business Partner detection - matches if email OR (name+country+postal) already exists in SAP

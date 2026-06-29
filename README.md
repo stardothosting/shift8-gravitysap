@@ -4,7 +4,7 @@ A secure WordPress plugin that integrates Gravity Forms with SAP Business One, a
 
 **📖 [Read the complete setup guide and technical walkthrough](https://shift8web.ca/how-to-integrate-sap-b1-business-one-into-wordpress-gravity-forms/)**
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
+[![Version](https://img.shields.io/badge/version-1.6.1-blue.svg)](https://github.com/stardothosting/shift8-gravitysap)
 [![WordPress Plugin Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org/)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-green)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -357,6 +357,11 @@ wp sap-query entry --form_id=<id> --verify
 Cross-references GF entry meta against live SAP B1 data to confirm records were created correctly.
 
 ## Changelog
+
+### 1.6.1
+* **NEW**: SAP B1 Processed notification event for emails that need SAP response data after quotation creation
+* **NEW**: SAP merge tags for notifications, including `{sap_quotation_number}` for the Sales Quotation DocNum
+* **IMPROVED**: Post-SAP notifications are sent only after SAP metadata is saved and are protected against duplicate sends
 
 ### 1.6.0
 * **NEW**: Email-based duplicate Business Partner detection - matches if email OR (name+country+postal) already exists in SAP

@@ -1308,6 +1308,39 @@ class Shift8_GravitySAP_SAP_Service {
      * - Country (from BPAddresses)
      * - ZipCode/Postal (from BPAddresses)
      *
+     * @since 1.6.0
+     * @param string $card_code Business Partner CardCode
+     * @param array  $data Fields to update (e.g., array('FreeText' => 'notes'))
+     * @return bool True on success
+     */
+    public function update_business_partner($card_code, $data) {
+        if (!$this->ensure_authenticated()) {
+            return false;
+        }
+
+        $escaped_code = str_replace("'", "''", $card_code);
+        $response = $this->make_request('PATCH', "/BusinessPartners('{$escaped_code}')", $data);
+
+        if (is_wp_error($response)) {
+            shift8_gravitysap_debug_log('BP PATCH failed', array('error' => $response->get_error_message()));
+            return false;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 204) {
+            $body = wp_remote_retrieve_body($response);
+            $error_data = json_decode($body, true);
+            shift8_gravitysap_debug_log('BP PATCH error', array(
+                'http_code' => $code,
+                'error' => $error_data['error']['message']['value'] ?? 'Unknown error'
+            ));
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @since 1.3.9
      * @param string $name Business Partner name (case-insensitive comparison)
      * @param string $country 2-letter country code

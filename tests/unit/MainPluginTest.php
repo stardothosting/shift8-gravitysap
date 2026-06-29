@@ -92,6 +92,48 @@ class MainPluginTest extends TestCase {
     }
 
     /**
+     * Test SAP B1 notification merge tags are replaced from entry meta
+     */
+    public function test_sap_merge_tags_replace_entry_meta() {
+        $meta = array(
+            'sap_b1_quotation_docnum' => '64',
+            'sap_b1_quotation_docentry' => '64',
+            'sap_b1_cardcode' => 'E00824',
+            'sap_b1_contact_name' => 'Sherry E2e Test',
+            'sap_b1_contact_internal_code' => '1618',
+            'sap_b1_status' => 'success',
+            'sap_b1_error' => '',
+        );
+
+        Functions\when('gform_get_meta')->alias(function($entry_id, $key) use ($meta) {
+            return isset($meta[$key]) ? $meta[$key] : '';
+        });
+
+        $text = 'Quote {sap_quotation_number}, Entry {sap_quotation_docentry}, BP {sap_business_partner_code}, Contact {sap_contact_name} ({sap_contact_internal_code}), Status {sap_status}';
+        $result = $this->plugin->replace_sap_merge_tags($text, array(), array('id' => 10), false, false, false, 'html');
+
+        $this->assertSame(
+            'Quote 64, Entry 64, BP E00824, Contact Sherry E2e Test (1618), Status success',
+            $result,
+            'Should replace SAP merge tags with entry meta values'
+        );
+    }
+
+    /**
+     * Test SAP B1 processed notification event is registered
+     */
+    public function test_sap_processed_notification_event_registered() {
+        Functions\when('esc_html__')->alias(function($text) {
+            return $text;
+        });
+
+        $events = $this->plugin->add_sap_notification_event(array(), array('id' => 10));
+
+        $this->assertArrayHasKey('sap_b1_processed', $events, 'Should register SAP B1 processed notification event');
+        $this->assertSame('SAP B1 Processed', $events['sap_b1_processed'], 'Should use expected event label');
+    }
+
+    /**
      * Test gravity forms active check with simple approach
      */
     public function test_gravity_forms_active_check() {

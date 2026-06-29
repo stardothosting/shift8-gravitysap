@@ -3,7 +3,7 @@
  * Plugin Name: Shift8 Integration for Gravity Forms and SAP Business One
  * Plugin URI: https://github.com/stardothosting/shift8-gravitysap
  * Description: Integrates Gravity Forms with SAP Business One, automatically creating Business Partners from form submissions.
- * Version: 1.6.0
+ * Version: 1.6.1
  * Author: Shift8 Web
  * Author URI: https://shift8web.ca
  * Text Domain: shift8-gravity-forms-sap-b1-integration
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('SHIFT8_GRAVITYSAP_VERSION', '1.6.0');
+define('SHIFT8_GRAVITYSAP_VERSION', '1.6.1');
 define('SHIFT8_GRAVITYSAP_PLUGIN_FILE', __FILE__);
 define('SHIFT8_GRAVITYSAP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SHIFT8_GRAVITYSAP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -234,6 +234,9 @@ class Shift8_GravitySAP {
         
         // Form processing hooks
         add_action('gform_after_submission', array($this, 'process_form_submission'), 10, 2);
+        add_filter('gform_notification_events', array($this, 'add_sap_notification_event'), 10, 2);
+        add_filter('gform_custom_merge_tags', array($this, 'add_sap_merge_tags'), 10, 4);
+        add_filter('gform_replace_merge_tags', array($this, 'replace_sap_merge_tags'), 10, 7);
         
         // Add SAP B1 status column to entries list
         add_filter('gform_entry_list_columns', array($this, 'add_sap_status_column'), 10, 2);
@@ -1784,6 +1787,42 @@ class Shift8_GravitySAP {
                 // Use existing Business Partner
                 $card_code = $existing_card_code;
                 
+                // Append FreeText (Remarks/Notes) on existing BP if mapped
+                if (!empty($business_partner_data['FreeText'])) {
+                    $existing_bp = $sap_service->get_business_partner($card_code);
+                    $existing_freetext = '';
+                    if ($existing_bp && !empty($existing_bp['FreeText'])) {
+                        $existing_freetext = $existing_bp['FreeText'];
+                    }
+                    
+                    $new_note = $business_partner_data['FreeText'];
+                    if (!empty($existing_freetext)) {
+                        $timestamp = current_time('Y-m-d H:i');
+                        $combined = $existing_freetext . "\n---\n[" . $timestamp . '] ' . $new_note;
+                    } else {
+                        $combined = $new_note;
+                    }
+                    
+                    $sap_field_limits = Shift8_GravitySAP::get_sap_field_limits();
+                    $max_len = $sap_field_limits['FreeText']['max_length'] ?? 254;
+                    if (strlen($combined) > $max_len) {
+                        $combined = substr($combined, 0, $max_len);
+                    }
+                    
+                    $patch_data = array('FreeText' => $combined);
+                    $patch_result = $sap_service->update_business_partner($card_code, $patch_data);
+                    if ($patch_result) {
+                        shift8_gravitysap_debug_log('✅ Appended FreeText on existing BP', array(
+                            'CardCode' => $card_code,
+                            'FreeText' => $combined
+                        ));
+                    } else {
+                        shift8_gravitysap_debug_log('⚠️ Failed to update FreeText on existing BP', array(
+                            'CardCode' => $card_code
+                        ));
+                    }
+                }
+                
                 // Handle Contact Person for existing Business Partner
                 if (!empty($business_partner_data['ContactEmployees']) && is_array($business_partner_data['ContactEmployees'])) {
                     $contact_data = $business_partner_data['ContactEmployees'][0];
@@ -2049,6 +2088,143 @@ class Shift8_GravitySAP {
                 'entry_data' => $entry
             ));
         }
+
+        $this->send_sap_processed_notifications($entry, $form);
+    }
+
+    /**
+     * Add a notification event that fires after SAP B1 processing completes.
+     *
+     * @since 1.6.0
+     * @param array $events Gravity Forms notification events.
+     * @param array $form   Gravity Forms form.
+     * @return array
+     */
+    public function add_sap_notification_event($events, $form) {
+        $events['sap_b1_processed'] = esc_html__('SAP B1 Processed', 'shift8-gravity-forms-sap-b1-integration');
+        return $events;
+    }
+
+    /**
+     * Add SAP B1 merge tags to the Gravity Forms notification UI.
+     *
+     * @since 1.6.0
+     * @param array $merge_tags Existing merge tags.
+     * @return array
+     */
+    public function add_sap_merge_tags($merge_tags) {
+        $merge_tags[] = array('label' => esc_html__('SAP Sales Quotation Number', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_quotation_number}');
+        $merge_tags[] = array('label' => esc_html__('SAP Sales Quotation DocEntry', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_quotation_docentry}');
+        $merge_tags[] = array('label' => esc_html__('SAP Business Partner Code', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_business_partner_code}');
+        $merge_tags[] = array('label' => esc_html__('SAP Contact Name', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_contact_name}');
+        $merge_tags[] = array('label' => esc_html__('SAP Contact InternalCode', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_contact_internal_code}');
+        $merge_tags[] = array('label' => esc_html__('SAP B1 Status', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_status}');
+        $merge_tags[] = array('label' => esc_html__('SAP B1 Error', 'shift8-gravity-forms-sap-b1-integration'), 'tag' => '{sap_error}');
+
+        return $merge_tags;
+    }
+
+    /**
+     * Replace SAP B1 merge tags with values stored on the GF entry.
+     *
+     * @since 1.6.0
+     * @param string $text       Text containing merge tags.
+     * @param array  $form       Gravity Forms form.
+     * @param array  $entry      Gravity Forms entry.
+     * @param bool   $url_encode Whether to URL encode replacements.
+     * @param bool   $esc_html   Whether to HTML escape replacements.
+     * @return string
+     */
+    public function replace_sap_merge_tags($text, $form, $entry, $url_encode, $esc_html, $nl2br = false, $format = 'html') {
+        if (empty($entry['id']) || strpos($text, '{sap_') === false) {
+            return $text;
+        }
+
+        $replacements = array(
+            '{sap_quotation_number}' => gform_get_meta($entry['id'], 'sap_b1_quotation_docnum'),
+            '{sap_quotation_docentry}' => gform_get_meta($entry['id'], 'sap_b1_quotation_docentry'),
+            '{sap_business_partner_code}' => gform_get_meta($entry['id'], 'sap_b1_cardcode'),
+            '{sap_contact_name}' => gform_get_meta($entry['id'], 'sap_b1_contact_name'),
+            '{sap_contact_internal_code}' => gform_get_meta($entry['id'], 'sap_b1_contact_internal_code'),
+            '{sap_status}' => gform_get_meta($entry['id'], 'sap_b1_status'),
+            '{sap_error}' => gform_get_meta($entry['id'], 'sap_b1_error'),
+        );
+
+        foreach ($replacements as $tag => $value) {
+            $value = (string) $value;
+            if ($esc_html) {
+                $value = esc_html($value);
+            }
+            if ($url_encode) {
+                $value = rawurlencode($value);
+            }
+            $text = str_replace($tag, $value, $text);
+        }
+
+        return $text;
+    }
+
+    /**
+     * Send SAP B1 processed notifications after SAP metadata has been saved.
+     *
+     * @since 1.6.0
+     * @param array $entry Gravity Forms entry.
+     * @param array $form  Gravity Forms form.
+     * @return void
+     */
+    private function send_sap_processed_notifications($entry, $form) {
+        if (empty($entry['id']) || !class_exists('GFAPI')) {
+            return;
+        }
+
+        $settings = rgar($form, 'sap_integration_settings', array());
+        $entry_id = absint($entry['id']);
+        $skip_reason = $this->get_sap_processed_notification_skip_reason($entry_id, $settings);
+
+        if (!empty($skip_reason)) {
+            shift8_gravitysap_debug_log('SAP processed notification skipped: ' . $skip_reason, array(
+                'entry_id' => $entry_id
+            ));
+            return;
+        }
+
+        $updated_entry = GFAPI::get_entry($entry_id);
+        if (is_wp_error($updated_entry)) {
+            $updated_entry = $entry;
+        }
+
+        GFAPI::send_notifications($form, $updated_entry, 'sap_b1_processed');
+        gform_update_meta($entry_id, 'sap_b1_processed_notification_sent', '1');
+
+        shift8_gravitysap_debug_log('SAP processed notification event sent', array(
+            'entry_id' => $entry_id,
+            'event' => 'sap_b1_processed',
+            'quotation_docnum' => gform_get_meta($entry_id, 'sap_b1_quotation_docnum')
+        ));
+    }
+
+    /**
+     * Get the reason SAP processed notifications should be skipped.
+     *
+     * @since 1.6.0
+     * @param int   $entry_id Entry ID.
+     * @param array $settings Form SAP settings.
+     * @return string Empty string if notifications can be sent.
+     */
+    private function get_sap_processed_notification_skip_reason($entry_id, $settings) {
+        if (gform_get_meta($entry_id, 'sap_b1_status') !== 'success') {
+            return 'SAP status is not success';
+        }
+
+        if (!empty($settings['create_quotation']) && $settings['create_quotation'] === '1' && empty(gform_get_meta($entry_id, 'sap_b1_quotation_docnum'))) {
+            return 'quotation number missing';
+        }
+
+        if (gform_get_meta($entry_id, 'sap_b1_processed_notification_sent') === '1') {
+            return 'already sent';
+        }
+
+        return '';
     }
     
     /**
